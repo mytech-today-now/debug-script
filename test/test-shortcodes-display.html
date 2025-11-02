@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shortcodes Display Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .test-info {
+            background: #e3f2fd;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border-left: 4px solid #2196f3;
+        }
+
+        h4 {
+            color: #333;
+            margin: 20px 0 10px 0;
+            font-size: 18px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="test-info">
+            <h2>🔗 Shortcodes Display Test</h2>
+            <p><strong>Test Features:</strong></p>
+            <ul>
+                <li>Scrollable container showing all shortcodes (no 24-item limit)</li>
+                <li>Vertically resizable interface - drag bottom-right corner</li>
+                <li>Hover animations on shortcode cards</li>
+                <li>Professional styling with gradients and shadows</li>
+                <li>Responsive grid layout</li>
+            </ul>
+        </div>
+
+        <!-- Simulated Shortcodes Section -->
+        <h4>🔗 Registered Shortcodes</h4>
+        
+        <!-- Scrollable, resizable container for all shortcodes -->
+        <div style="
+            border: 1px solid #ddd; 
+            border-radius: 8px; 
+            background: #fff; 
+            margin: 15px 0; 
+            resize: vertical; 
+            overflow: auto; 
+            min-height: 200px; 
+            max-height: 600px; 
+            height: 300px;
+            padding: 10px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        ">
+        
+            <!-- Grid container for shortcodes -->
+            <div style="
+                display: grid; 
+                grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); 
+                gap: 10px;
+                padding: 5px;
+            ">
+
+                <!-- Sample shortcodes to demonstrate the layout -->
+                <div class="shortcode-card" style="
+                    background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%); 
+                    padding: 12px; 
+                    border-radius: 6px; 
+                    border-left: 3px solid #ffc107; 
+                    font-size: 13px;
+                    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+                    transition: transform 0.2s ease, box-shadow 0.2s ease;
+                    cursor: default;
+                ">
+                    <div style="font-weight: 600; color: #856404; margin-bottom: 4px;">🔗 Shortcode</div>
+                    <div style="font-family: monospace; color: #495057; font-size: 12px; word-break: break-all;">[gallery]</div>
+                </div>
+
+                <div class="shortcode-card" style="
+                    background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%); 
+                    padding: 12px; 
+                    border-radius: 6px; 
+                    border-left: 3px solid #ffc107; 
+                    font-size: 13px;
+                    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+                    transition: transform 0.2s ease, box-shadow 0.2s ease;
+                    cursor: default;
+                ">
+                    <div style="font-weight: 600; color: #856404; margin-bottom: 4px;">🔗 Shortcode</div>
+                    <div style="font-family: monospace; color: #495057; font-size: 12px; word-break: break-all;">[caption]</div>
+                </div>
+
+                <div class="shortcode-card" style="
+                    background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%); 
+                    padding: 12px; 
+                    border-radius: 6px; 
+                    border-left: 3px solid #ffc107; 
+                    font-size: 13px;
+                    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+                    transition: transform 0.2s ease, box-shadow 0.2s ease;
+                    cursor: default;
+                ">
+                    <div style="font-weight: 600; color: #856404; margin-bottom: 4px;">🔗 Shortcode</div>
+                    <div style="font-family: monospace; color: #495057; font-size: 12px; word-break: break-all;">[embed]</div>
+                </div>
+
+                <div class="shortcode-card" style="
+                    background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%); 
+                    padding: 12px; 
+                    border-radius: 6px; 
+                    border-left: 3px solid #ffc107; 
+                    font-size: 13px;
+                    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+                    transition: transform 0.2s ease, box-shadow 0.2s ease;
+                    cursor: default;
+                ">
+                    <div style="font-weight: 600; color: #856404; margin-bottom: 4px;">🔗 Shortcode</div>
+                    <div style="font-family: monospace; color: #495057; font-size: 12px; word-break: break-all;">[audio]</div>
+                </div>
+
+                <div class="shortcode-card" style="
+                    background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%); 
+                    padding: 12px; 
+                    border-radius: 6px; 
+                    border-left: 3px solid #ffc107; 
+                    font-size: 13px;
+                    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+                    transition: transform 0.2s ease, box-shadow 0.2s ease;
+                    cursor: default;
+                ">
+                    <div style="font-weight: 600; color: #856404; margin-bottom: 4px;">🔗 Shortcode</div>
+                    <div style="font-family: monospace; color: #495057; font-size: 12px; word-break: break-all;">[video]</div>
+                </div>
+
+                <div class="shortcode-card" style="
+                    background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%); 
+                    padding: 12px; 
+                    border-radius: 6px; 
+                    border-left: 3px solid #ffc107; 
+                    font-size: 13px;
+                    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+                    transition: transform 0.2s ease, box-shadow 0.2s ease;
+                    cursor: default;
+                ">
+                    <div style="font-weight: 600; color: #856404; margin-bottom: 4px;">🔗 Shortcode</div>
+                    <div style="font-family: monospace; color: #495057; font-size: 12px; word-break: break-all;">[playlist]</div>
+                </div>
+
+                <div class="shortcode-card" style="
+                    background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%); 
+                    padding: 12px; 
+                    border-radius: 6px; 
+                    border-left: 3px solid #ffc107; 
+                    font-size: 13px;
+                    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+                    transition: transform 0.2s ease, box-shadow 0.2s ease;
+                    cursor: default;
+                ">
+                    <div style="font-weight: 600; color: #856404; margin-bottom: 4px;">🔗 Shortcode</div>
+                    <div style="font-family: monospace; color: #495057; font-size: 12px; word-break: break-all;">[wp_caption]</div>
+                </div>
+
+                <div class="shortcode-card" style="
+                    background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%); 
+                    padding: 12px; 
+                    border-radius: 6px; 
+                    border-left: 3px solid #ffc107; 
+                    font-size: 13px;
+                    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+                    transition: transform 0.2s ease, box-shadow 0.2s ease;
+                    cursor: default;
+                ">
+                    <div style="font-weight: 600; color: #856404; margin-bottom: 4px;">🔗 Shortcode</div>
+                    <div style="font-family: monospace; color: #495057; font-size: 12px; word-break: break-all;">[contact-form-7]</div>
+                </div>
+
+                <!-- Add more sample shortcodes to demonstrate scrolling -->
+                <div class="shortcode-card" style="
+                    background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%); 
+                    padding: 12px; 
+                    border-radius: 6px; 
+                    border-left: 3px solid #ffc107; 
+                    font-size: 13px;
+                    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+                    transition: transform 0.2s ease, box-shadow 0.2s ease;
+                    cursor: default;
+                ">
+                    <div style="font-weight: 600; color: #856404; margin-bottom: 4px;">🔗 Shortcode</div>
+                    <div style="font-family: monospace; color: #495057; font-size: 12px; word-break: break-all;">[woocommerce_cart]</div>
+                </div>
+
+                <div class="shortcode-card" style="
+                    background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%); 
+                    padding: 12px; 
+                    border-radius: 6px; 
+                    border-left: 3px solid #ffc107; 
+                    font-size: 13px;
+                    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+                    transition: transform 0.2s ease, box-shadow 0.2s ease;
+                    cursor: default;
+                ">
+                    <div style="font-weight: 600; color: #856404; margin-bottom: 4px;">🔗 Shortcode</div>
+                    <div style="font-family: monospace; color: #495057; font-size: 12px; word-break: break-all;">[elementor-template]</div>
+                </div>
+
+            </div>
+            
+            <!-- Add shortcode count and resize hint -->
+            <div style="
+                margin-top: 10px; 
+                padding: 8px 12px; 
+                background: #e9ecef; 
+                border-radius: 4px; 
+                font-size: 11px; 
+                color: #6c757d; 
+                text-align: center;
+                border-top: 1px solid #dee2e6;
+            ">
+                <strong>10</strong> registered shortcodes total
+                • <em>Drag bottom-right corner to resize vertically</em>
+            </div>
+            
+        </div>
+    </div>
+
+    <script>
+        // Add hover effects to shortcode cards
+        document.querySelectorAll('.shortcode-card').forEach(card => {
+            card.addEventListener('mouseenter', function() {
+                this.style.transform = 'translateY(-2px)';
+                this.style.boxShadow = '0 3px 8px rgba(0,0,0,0.15)';
+            });
+            
+            card.addEventListener('mouseleave', function() {
+                this.style.transform = 'translateY(0)';
+                this.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
+            });
+        });
+    </script>
+</body>
+</html>

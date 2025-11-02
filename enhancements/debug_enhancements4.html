@@ -1,0 +1,785 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WordPress Debug Tool - Ultimate Enhancement Specifications v4</title>
+    <style>
+        :root {
+            --primary-color: #667eea;
+            --secondary-color: #764ba2;
+            --success-color: #28a745;
+            --warning-color: #ffc107;
+            --danger-color: #dc3545;
+            --info-color: #17a2b8;
+            --dark-color: #343a40;
+            --light-color: #f8f9fa;
+            --border-color: #dee2e6;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+            color: white;
+            padding: 40px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            font-weight: 800;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .header p {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+
+        .content {
+            padding: 40px;
+        }
+
+        .section {
+            margin-bottom: 40px;
+        }
+
+        .section h2 {
+            color: var(--primary-color);
+            font-size: 1.8rem;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 3px solid var(--primary-color);
+        }
+
+        .section h3 {
+            color: var(--secondary-color);
+            font-size: 1.4rem;
+            margin: 30px 0 15px 0;
+        }
+
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
+            gap: 30px;
+            margin: 30px 0;
+        }
+
+        .feature-card {
+            background: var(--light-color);
+            border: 2px solid var(--border-color);
+            border-radius: 12px;
+            padding: 25px;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .feature-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 15px 30px rgba(0,0,0,0.1);
+            border-color: var(--primary-color);
+        }
+
+        .feature-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, var(--primary-color), var(--secondary-color));
+        }
+
+        .feature-title {
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: var(--dark-color);
+            margin-bottom: 15px;
+        }
+
+        .feature-meta {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+
+        .badge {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .badge-useful { background: var(--success-color); color: white; }
+        .badge-integration { background: var(--info-color); color: white; }
+        .badge-target { background: var(--warning-color); color: white; }
+
+        .feature-description {
+            color: #666;
+            margin-bottom: 15px;
+            line-height: 1.6;
+        }
+
+        .code-block {
+            background: #2d3748;
+            color: #e2e8f0;
+            padding: 20px;
+            border-radius: 8px;
+            font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+            font-size: 0.9rem;
+            overflow-x: auto;
+            margin: 15px 0;
+            border-left: 4px solid var(--primary-color);
+        }
+
+        .priority-section {
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+            padding: 30px;
+            border-radius: 12px;
+            margin: 30px 0;
+        }
+
+        .priority-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .priority-card {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            border-left: 4px solid;
+        }
+
+        .priority-high { border-left-color: var(--danger-color); }
+        .priority-medium { border-left-color: var(--warning-color); }
+        .priority-low { border-left-color: var(--success-color); }
+
+        .security-guidelines {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            border-radius: 8px;
+            padding: 25px;
+            margin: 30px 0;
+        }
+
+        .security-guidelines h4 {
+            color: #856404;
+            margin-bottom: 15px;
+        }
+
+        .security-guidelines ul {
+            color: #856404;
+            padding-left: 20px;
+        }
+
+        .performance-guidelines {
+            background: #d1ecf1;
+            border: 1px solid #bee5eb;
+            border-radius: 8px;
+            padding: 25px;
+            margin: 30px 0;
+        }
+
+        .performance-guidelines h4 {
+            color: #0c5460;
+            margin-bottom: 15px;
+        }
+
+        .performance-guidelines ul {
+            color: #0c5460;
+            padding-left: 20px;
+        }
+
+        .toc {
+            background: var(--light-color);
+            border: 2px solid var(--border-color);
+            border-radius: 12px;
+            padding: 25px;
+            margin-bottom: 30px;
+        }
+
+        .toc h3 {
+            color: var(--primary-color);
+            margin-bottom: 15px;
+        }
+
+        .toc ul {
+            list-style: none;
+            padding-left: 0;
+        }
+
+        .toc li {
+            padding: 8px 0;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .toc li:last-child {
+            border-bottom: none;
+        }
+
+        .toc a {
+            color: var(--dark-color);
+            text-decoration: none;
+            font-weight: 500;
+            transition: color 0.3s ease;
+        }
+
+        .toc a:hover {
+            color: var(--primary-color);
+        }
+
+        @media (max-width: 768px) {
+            .feature-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .header h1 {
+                font-size: 2rem;
+            }
+            
+            .content {
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚀 WordPress Debug Tool</h1>
+            <p>Ultimate Enhancement Specifications v4</p>
+        </div>
+
+        <div class="content">
+            <div class="toc">
+                <h3>📋 Table of Contents</h3>
+                <ul>
+                    <li><a href="#overview">Task Overview</a></li>
+                    <li><a href="#new-features">New Features (10 Advanced Features)</a></li>
+                    <li><a href="#gui-enhancements">GUI Enhancements (8 Interface Improvements)</a></li>
+                    <li><a href="#implementation-priority">Implementation Priority</a></li>
+                    <li><a href="#security">Security Considerations</a></li>
+                    <li><a href="#performance">Performance Guidelines</a></li>
+                </ul>
+            </div>
+
+            <div class="section" id="overview">
+                <h2>🎯 Task Overview</h2>
+                <p>You are an expert WordPress developer and UI/UX designer specializing in debugging tools. Enhance the comprehensive PHP-based WordPress debug tool called <strong>"Ultimate WordPress Debug Tool - Omega Version"</strong> located at <code>debug-script/debug-omega.php</code>.</p>
+                
+                <p>The current tool includes sections for configuration analysis, security scans, database tables/queries, theme templates, block editor diagnostics, content/shortcode detection, plugin conflict testing, hooks/filters tracking, HTTP/cURL tests, cache/CDN health, error log pattern analysis, performance breakdowns, and cron job diagnostics. The GUI uses collapsible sections, metrics grids, tables, badges, and basic JS for toggles/export/theme switching.</p>
+            </div>
+
+            <div class="section" id="new-features">
+                <h2>🔧 New Features</h2>
+                <h3>10 Advanced WordPress Debugging Features</h3>
+                
+                <div class="feature-grid">
+                    <div class="feature-card">
+                        <div class="feature-title">1. 📡 Real-Time Log Tailing with WebSocket Integration</div>
+                        <div class="feature-meta">
+                            <span class="badge badge-useful">Real-Time Monitoring</span>
+                            <span class="badge badge-integration">Error Pattern Analysis</span>
+                        </div>
+                        <div class="feature-description">
+                            <strong>Why Useful:</strong> Monitor WordPress errors, PHP errors, and custom logs in real-time without page refresh<br>
+                            <strong>Integration:</strong> Add new section after Error Pattern Analysis, use existing <code>$debug_timings</code> for performance tracking
+                        </div>
+                        <div class="code-block">function start_log_tail_websocket() {
+    // WebSocket server using ReactPHP or Ratchet
+    // Monitor error_log, debug.log, and custom log files
+    // Send real-time updates to frontend via WebSocket
+}
+
+// JavaScript WebSocket client
+const logSocket = new WebSocket('ws://localhost:8080/debug-logs');
+logSocket.onmessage = function(event) {
+    appendLogEntry(JSON.parse(event.data));
+};</div>
+                    </div>
+
+                    <div class="feature-card">
+                        <div class="feature-title">2. ⚡ WP-CLI Integration & Command Runner</div>
+                        <div class="feature-meta">
+                            <span class="badge badge-useful">Command Execution</span>
+                            <span class="badge badge-integration">Security Checks</span>
+                        </div>
+                        <div class="feature-description">
+                            <strong>Why Useful:</strong> Execute WP-CLI commands directly from debug interface for database repairs, cache clearing, plugin management<br>
+                            <strong>Integration:</strong> Add new section with command history, integrate with existing security checks
+                        </div>
+                        <div class="code-block">function execute_wp_cli_command($command) {
+    // Security: Whitelist allowed commands
+    $allowed_commands = ['cache flush', 'db check', 'plugin list', 'theme list'];
+    if (!in_array($command, $allowed_commands)) return false;
+    
+    $output = shell_exec("wp {$command} --path=" . ABSPATH);
+    return ['output' => $output, 'timestamp' => time()];
+}</div>
+                    </div>
+
+                    <div class="feature-card">
+                        <div class="feature-title">3. 🔄 Automated Fix Runner with Rollback System</div>
+                        <div class="feature-meta">
+                            <span class="badge badge-useful">Auto-Repair</span>
+                            <span class="badge badge-integration">Error Analysis</span>
+                        </div>
+                        <div class="feature-description">
+                            <strong>Why Useful:</strong> Automatically apply common fixes (clear cache, repair database, update .htaccess) with ability to rollback<br>
+                            <strong>Integration:</strong> Extend existing error analysis with actionable fix buttons, use WordPress transients for rollback data
+                        </div>
+                        <div class="code-block">function apply_automated_fix($fix_type) {
+    // Create rollback point
+    $rollback_data = create_rollback_point();
+    set_transient('debug_rollback_' . $fix_type, $rollback_data, 3600);
+    
+    switch($fix_type) {
+        case 'clear_cache': wp_cache_flush(); break;
+        case 'repair_db': $wpdb->query("REPAIR TABLE {$table}"); break;
+    }
+}</div>
+                    </div>
+
+                    <div class="feature-card">
+                        <div class="feature-title">4. 🌐 Multisite Network Diagnostics</div>
+                        <div class="feature-meta">
+                            <span class="badge badge-useful">Network Analysis</span>
+                            <span class="badge badge-integration">Conditional Section</span>
+                        </div>
+                        <div class="feature-description">
+                            <strong>Why Useful:</strong> Debug multisite-specific issues like subdomain routing, shared tables, network plugin conflicts<br>
+                            <strong>Integration:</strong> Add conditional section that appears only on multisite installations
+                        </div>
+                        <div class="code-block">if (is_multisite()) {
+    function analyze_multisite_network() {
+        $sites = get_sites(['number' => 100]);
+        $network_plugins = get_site_option('active_sitewide_plugins');
+        $domain_mapping = analyze_domain_mapping();
+        return compact('sites', 'network_plugins', 'domain_mapping');
+    }
+}</div>
+                    </div>
+
+                    <div class="feature-card">
+                        <div class="feature-title">5. 🔌 REST API Endpoint Testing & Documentation</div>
+                        <div class="feature-meta">
+                            <span class="badge badge-useful">API Testing</span>
+                            <span class="badge badge-integration">HTTP Diagnostics</span>
+                        </div>
+                        <div class="feature-description">
+                            <strong>Why Useful:</strong> Test all registered REST API endpoints, check authentication, validate responses<br>
+                            <strong>Integration:</strong> New section with interactive API explorer, use existing HTTP diagnostics functions
+                        </div>
+                        <div class="code-block">function get_rest_endpoints() {
+    $server = rest_get_server();
+    $routes = $server->get_routes();
+    
+    foreach($routes as $route => $handlers) {
+        $endpoints[] = [
+            'route' => $route,
+            'methods' => array_keys($handlers),
+            'auth_required' => check_endpoint_auth($route)
+        ];
+    }
+    return $endpoints;
+}</div>
+                    </div>
+
+                    <div class="feature-card">
+                        <div class="feature-title">6. 🎨 Theme Builder & Page Builder Diagnostics</div>
+                        <div class="feature-meta">
+                            <span class="badge badge-useful">Builder Analysis</span>
+                            <span class="badge badge-integration">Theme Diagnostics</span>
+                        </div>
+                        <div class="feature-description">
+                            <strong>Why Useful:</strong> Debug Elementor, Gutenberg, Divi issues - check for conflicts, missing dependencies, performance impact<br>
+                            <strong>Integration:</strong> Extend existing theme diagnostics with builder-specific checks
+                        </div>
+                        <div class="code-block">function analyze_page_builders() {
+    $builders = [
+        'elementor' => class_exists('Elementor\Plugin'),
+        'divi' => function_exists('et_setup_theme'),
+        'beaver' => class_exists('FLBuilder')
+    ];
+
+    foreach($builders as $builder => $active) {
+        if($active) $analysis[$builder] = analyze_builder_performance($builder);
+    }
+}</div>
+                    </div>
+
+                    <div class="feature-card">
+                        <div class="feature-title">7. 🧠 Memory Usage Profiler with Call Stack</div>
+                        <div class="feature-meta">
+                            <span class="badge badge-useful">Memory Tracking</span>
+                            <span class="badge badge-integration">Performance Metrics</span>
+                        </div>
+                        <div class="feature-description">
+                            <strong>Why Useful:</strong> Track memory usage by function calls, identify memory leaks and heavy operations<br>
+                            <strong>Integration:</strong> Enhance existing performance metrics with detailed memory profiling
+                        </div>
+                        <div class="code-block">function start_memory_profiling() {
+    register_tick_function('memory_tick_handler');
+    declare(ticks=1);
+}
+
+function memory_tick_handler() {
+    $backtrace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 5);
+    $memory_usage[serialize($backtrace)] = memory_get_usage();
+}</div>
+                    </div>
+
+                    <div class="feature-card">
+                        <div class="feature-title">8. 🗄️ Database Query Optimizer with EXPLAIN Analysis</div>
+                        <div class="feature-meta">
+                            <span class="badge badge-useful">Query Optimization</span>
+                            <span class="badge badge-integration">Database Profiler</span>
+                        </div>
+                        <div class="feature-description">
+                            <strong>Why Useful:</strong> Analyze slow queries, suggest indexes, identify N+1 problems<br>
+                            <strong>Integration:</strong> Extend existing Database Query Profiler with optimization suggestions
+                        </div>
+                        <div class="code-block">function analyze_query_performance($query) {
+    $explain = $wpdb->get_results("EXPLAIN " . $query);
+    $suggestions = [];
+
+    foreach($explain as $row) {
+        if($row->key === null) $suggestions[] = "Consider adding index on {$row->table}";
+        if($row->rows > 1000) $suggestions[] = "Query scans too many rows";
+    }
+    return $suggestions;
+}</div>
+                    </div>
+
+                    <div class="feature-card">
+                        <div class="feature-title">9. 🛡️ Security Vulnerability Scanner with CVE Database</div>
+                        <div class="feature-meta">
+                            <span class="badge badge-useful">Vulnerability Check</span>
+                            <span class="badge badge-integration">Security Scan</span>
+                        </div>
+                        <div class="feature-description">
+                            <strong>Why Useful:</strong> Check plugins/themes against known vulnerabilities, scan for malware patterns<br>
+                            <strong>Integration:</strong> Enhance existing security scan with external vulnerability database
+                        </div>
+                        <div class="code-block">function check_vulnerability_database($plugin_slug, $version) {
+    $api_url = "https://wpscan.com/api/v3/plugins/{$plugin_slug}";
+    $response = wp_remote_get($api_url);
+    $vulnerabilities = json_decode(wp_remote_retrieve_body($response), true);
+
+    return filter_vulnerabilities_by_version($vulnerabilities, $version);
+}</div>
+                    </div>
+
+                    <div class="feature-card">
+                        <div class="feature-title">10. 🪝 Custom Hook & Filter Debugger</div>
+                        <div class="feature-meta">
+                            <span class="badge badge-useful">Hook Tracking</span>
+                            <span class="badge badge-integration">Hooks Analysis</span>
+                        </div>
+                        <div class="feature-description">
+                            <strong>Why Useful:</strong> Track custom hooks, see execution order, identify hook conflicts<br>
+                            <strong>Integration:</strong> Extend existing hooks analysis with custom hook tracking
+                        </div>
+                        <div class="code-block">function track_custom_hooks() {
+    add_action('all', function($hook) {
+        global $debug_custom_hooks;
+        if(strpos($hook, 'wp_') !== 0) {
+            $debug_custom_hooks[$hook][] = [
+                'time' => microtime(true),
+                'backtrace' => debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 3)
+            ];
+        }
+    });
+}</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="section" id="gui-enhancements">
+                <h2>🎨 GUI Enhancements</h2>
+                <h3>8 Advanced Interface Improvements</h3>
+
+                <div class="feature-grid">
+                    <div class="feature-card">
+                        <div class="feature-title">1. 📊 Interactive Performance Charts with Chart.js</div>
+                        <div class="feature-meta">
+                            <span class="badge badge-target">Performance Dashboard</span>
+                            <span class="badge badge-target">Database Profiler</span>
+                        </div>
+                        <div class="feature-description">
+                            <strong>Description:</strong> Replace static metrics with interactive line/bar charts showing performance over time<br>
+                            <strong>Target Sections:</strong> Performance Dashboard, Database Query Profiler, Memory Usage
+                        </div>
+                        <div class="code-block">function createPerformanceChart(canvasId, data) {
+    new Chart(document.getElementById(canvasId), {
+        type: 'line',
+        data: {
+            labels: data.timestamps,
+            datasets: [{
+                label: 'Response Time (ms)',
+                data: data.response_times,
+                borderColor: 'rgb(75, 192, 192)'
+            }]
+        }
+    });
+}</div>
+                    </div>
+
+                    <div class="feature-card">
+                        <div class="feature-title">2. 🔍 Advanced Search & Filter System</div>
+                        <div class="feature-meta">
+                            <span class="badge badge-target">Database Tables</span>
+                            <span class="badge badge-target">Plugin Analysis</span>
+                        </div>
+                        <div class="feature-description">
+                            <strong>Description:</strong> Global search across all sections, filter tables by multiple criteria, save filter presets<br>
+                            <strong>Target Sections:</strong> Database Tables, Plugin Analysis, Error Logs, Hooks Analysis
+                        </div>
+                        <div class="code-block">class DebugSearchFilter {
+    constructor() {
+        this.filters = new Map();
+        this.searchIndex = this.buildSearchIndex();
+    }
+
+    applyFilters(section, criteria) {
+        const rows = document.querySelectorAll(`#${section} tbody tr`);
+        rows.forEach(row => {
+            row.style.display = this.matchesCriteria(row, criteria) ? '' : 'none';
+        });
+    }
+}</div>
+                    </div>
+
+                    <div class="feature-card">
+                        <div class="feature-title">3. 🪟 Modal-Based Detail Views</div>
+                        <div class="feature-meta">
+                            <span class="badge badge-target">Database Tables</span>
+                            <span class="badge badge-target">Error Patterns</span>
+                        </div>
+                        <div class="feature-description">
+                            <strong>Description:</strong> Click any table row to open detailed modal with expanded information and actions<br>
+                            <strong>Target Sections:</strong> Database Tables, Plugin Analysis, Error Patterns, Security Scan
+                        </div>
+                        <div class="code-block">.debug-modal {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0,0,0,0.8); z-index: 1000;
+    display: flex; align-items: center; justify-content: center;
+}
+.debug-modal-content {
+    background: var(--debug-bg); padding: 30px; border-radius: 12px;
+    max-width: 80%; max-height: 80%; overflow-y: auto;
+}</div>
+                    </div>
+
+                    <div class="feature-card">
+                        <div class="feature-title">4. 🎯 Drag & Drop Section Reordering</div>
+                        <div class="feature-meta">
+                            <span class="badge badge-target">All Sections</span>
+                            <span class="badge badge-integration">User Preferences</span>
+                        </div>
+                        <div class="feature-description">
+                            <strong>Description:</strong> Allow users to reorder debug sections based on their workflow preferences<br>
+                            <strong>Target Sections:</strong> All collapsible sections
+                        </div>
+                        <div class="code-block">function initializeDragDrop() {
+    new Sortable(document.querySelector('.debug-sections'), {
+        handle: '.debug-section-header',
+        animation: 150,
+        onEnd: function(evt) {
+            localStorage.setItem('debug-section-order',
+                JSON.stringify(Array.from(evt.to.children).map(el => el.id)));
+        }
+    });
+}</div>
+                    </div>
+
+                    <div class="feature-card">
+                        <div class="feature-title">5. 📡 Real-Time Status Indicators with WebSocket</div>
+                        <div class="feature-meta">
+                            <span class="badge badge-target">Performance Dashboard</span>
+                            <span class="badge badge-integration">Live Updates</span>
+                        </div>
+                        <div class="feature-description">
+                            <strong>Description:</strong> Live status badges showing real-time system health (CPU, memory, active users)<br>
+                            <strong>Target Sections:</strong> Performance Dashboard header
+                        </div>
+                        <div class="code-block">function updateRealTimeStatus() {
+    const statusSocket = new WebSocket('ws://localhost:8080/status');
+    statusSocket.onmessage = function(event) {
+        const status = JSON.parse(event.data);
+        document.getElementById('cpu-usage').textContent = status.cpu + '%';
+        document.getElementById('memory-usage').textContent = status.memory + '%';
+    };
+}</div>
+                    </div>
+
+                    <div class="feature-card">
+                        <div class="feature-title">6. 📑 Tabbed Sub-Sections with State Persistence</div>
+                        <div class="feature-meta">
+                            <span class="badge badge-target">Database Analysis</span>
+                            <span class="badge badge-target">Security Scan</span>
+                        </div>
+                        <div class="feature-description">
+                            <strong>Description:</strong> Convert large sections into tabbed interfaces, remember active tabs across sessions<br>
+                            <strong>Target Sections:</strong> Database Analysis, Security Scan, Plugin Analysis
+                        </div>
+                        <div class="code-block">class TabbedSection {
+    constructor(sectionId) {
+        this.sectionId = sectionId;
+        this.activeTab = localStorage.getItem(`${sectionId}-active-tab`) || 'tab1';
+        this.initializeTabs();
+    }
+
+    switchTab(tabId) {
+        document.querySelectorAll(`#${this.sectionId} .tab-content`).forEach(tab =>
+            tab.style.display = 'none');
+        document.getElementById(tabId).style.display = 'block';
+        localStorage.setItem(`${this.sectionId}-active-tab`, tabId);
+    }
+}</div>
+                    </div>
+
+                    <div class="feature-card">
+                        <div class="feature-title">7. ⚡ Progressive Data Loading with Pagination</div>
+                        <div class="feature-meta">
+                            <span class="badge badge-target">Database Tables</span>
+                            <span class="badge badge-target">Error Logs</span>
+                        </div>
+                        <div class="feature-description">
+                            <strong>Description:</strong> Load large datasets progressively, implement virtual scrolling for huge tables<br>
+                            <strong>Target Sections:</strong> Database Tables, Error Logs, Hooks Analysis
+                        </div>
+                        <div class="code-block">class VirtualTable {
+    constructor(containerId, data, rowHeight = 40) {
+        this.container = document.getElementById(containerId);
+        this.data = data;
+        this.rowHeight = rowHeight;
+        this.visibleRows = Math.ceil(this.container.clientHeight / rowHeight);
+        this.render();
+    }
+
+    render() {
+        const startIndex = Math.floor(this.container.scrollTop / this.rowHeight);
+        const endIndex = Math.min(startIndex + this.visibleRows, this.data.length);
+        // Render only visible rows
+    }
+}</div>
+                    </div>
+
+                    <div class="feature-card">
+                        <div class="feature-title">8. 💡 Contextual Help System with Tooltips</div>
+                        <div class="feature-meta">
+                            <span class="badge badge-target">All Sections</span>
+                            <span class="badge badge-integration">Help System</span>
+                        </div>
+                        <div class="feature-description">
+                            <strong>Description:</strong> Interactive help tooltips explaining each metric, expandable help sections<br>
+                            <strong>Target Sections:</strong> All sections with complex metrics or technical terms
+                        </div>
+                        <div class="code-block">function initializeTooltips() {
+    tippy('[data-tooltip]', {
+        content(reference) {
+            return reference.getAttribute('data-tooltip');
+        },
+        theme: 'debug-theme',
+        placement: 'top',
+        arrow: true
+    });
+}</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="section" id="implementation-priority">
+                <h2>🎯 Implementation Priority</h2>
+                <div class="priority-section">
+                    <div class="priority-grid">
+                        <div class="priority-card priority-high">
+                            <h4>🔥 High Priority</h4>
+                            <ul>
+                                <li>Real-Time Log Tailing</li>
+                                <li>Interactive Charts</li>
+                                <li>Advanced Search</li>
+                                <li>Modal Details</li>
+                            </ul>
+                        </div>
+                        <div class="priority-card priority-medium">
+                            <h4>⚡ Medium Priority</h4>
+                            <ul>
+                                <li>WP-CLI Integration</li>
+                                <li>Automated Fixes</li>
+                                <li>Tabbed Sections</li>
+                                <li>Progressive Loading</li>
+                            </ul>
+                        </div>
+                        <div class="priority-card priority-low">
+                            <h4>📋 Low Priority</h4>
+                            <ul>
+                                <li>Multisite Diagnostics</li>
+                                <li>Custom Hook Debugger</li>
+                                <li>Drag & Drop</li>
+                                <li>Contextual Help</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="section" id="security">
+                <div class="security-guidelines">
+                    <h4>🔒 Security Considerations</h4>
+                    <ul>
+                        <li>All new features must check <code>current_user_can('manage_options')</code></li>
+                        <li>WP-CLI commands must use whitelist approach</li>
+                        <li>WebSocket connections should use authentication tokens</li>
+                        <li>File operations must validate paths and permissions</li>
+                        <li>All user inputs must be sanitized and validated</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="section" id="performance">
+                <div class="performance-guidelines">
+                    <h4>⚡ Performance Guidelines</h4>
+                    <ul>
+                        <li>Use WordPress transients for caching expensive operations</li>
+                        <li>Implement lazy loading for heavy diagnostic sections</li>
+                        <li>Use Web Workers for intensive JavaScript operations</li>
+                        <li>Optimize database queries with proper indexing</li>
+                        <li>Implement request throttling for real-time features</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

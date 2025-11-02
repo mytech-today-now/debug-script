@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Collapsible Tabs Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+
+        /* Tab Navigation */
+        .tab-navigation {
+            background: #f8f9fa;
+            border-bottom: 2px solid #e9ecef;
+            padding: 10px;
+            transition: all 0.3s ease;
+        }
+
+        .tab-nav-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+            justify-content: center;
+            max-width: 1200px;
+            margin: 0 auto;
+            transition: all 0.4s ease;
+            position: relative;
+        }
+
+        /* Collapsed State - Only show active tab, left-aligned */
+        .tab-nav-container.collapsed {
+            justify-content: flex-start;
+            height: 50px;
+            overflow: hidden;
+        }
+
+        .tab-nav-container.collapsed .tab-button:not(.active) {
+            opacity: 0;
+            transform: translateX(-100px) scale(0.8);
+            pointer-events: none;
+            position: absolute;
+            z-index: -1;
+        }
+
+        .tab-nav-container.collapsed .tab-button.active {
+            opacity: 1;
+            transform: translateX(0) scale(1);
+            position: relative;
+            z-index: 1;
+        }
+
+        .tab-button {
+            background: white;
+            border: 1px solid #dee2e6;
+            border-radius: 6px;
+            padding: 10px 15px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            color: #6c757d;
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            white-space: nowrap;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            min-width: 120px;
+            max-width: 180px;
+            flex: 1 1 calc(16.666% - 5px);
+            margin-bottom: 5px;
+        }
+
+        /* Enhanced transitions for smooth animations */
+        .tab-nav-container:not(.collapsed) .tab-button {
+            opacity: 1;
+            transform: translateX(0) scale(1);
+            position: relative;
+            z-index: 1;
+        }
+
+        .tab-button:hover {
+            background: #f8f9fa;
+            color: #495057;
+            border-color: #007bff;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .tab-button.active {
+            background: #007bff;
+            color: white;
+            border-color: #007bff;
+            box-shadow: 0 2px 8px rgba(0,123,255,0.3);
+        }
+
+        /* Hover hint for collapsed state */
+        .tab-nav-container.collapsed::after {
+            content: "Hover to expand all tabs";
+            position: absolute;
+            right: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 11px;
+            color: #6c757d;
+            opacity: 0.7;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+
+        .tab-nav-container.collapsed:hover::after {
+            opacity: 0;
+        }
+
+        .content {
+            background: white;
+            padding: 20px;
+            margin-top: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .test-info {
+            background: #e3f2fd;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border-left: 4px solid #2196f3;
+        }
+    </style>
+</head>
+<body>
+    <div class="test-info">
+        <h2>🧪 Collapsible Tab Navigation Test</h2>
+        <p><strong>Test Instructions:</strong></p>
+        <ul>
+            <li>By default, only the active tab (Performance) should be visible and left-aligned</li>
+            <li>Hover over the tab area to see all tabs animate into view</li>
+            <li>Move mouse away to see tabs collapse back to showing only the active tab</li>
+            <li>Click any tab to make it active and test the functionality</li>
+        </ul>
+    </div>
+
+    <!-- Tab Navigation -->
+    <div class="tab-navigation">
+        <div class="tab-nav-container collapsed">
+            <button class="tab-button active" data-tab="performance">📊 Performance</button>
+            <button class="tab-button" data-tab="url">🔗 URL Testing</button>
+            <button class="tab-button" data-tab="config">⚙️ Config</button>
+            <button class="tab-button" data-tab="security">🔒 Security</button>
+            <button class="tab-button" data-tab="database">📋 Database</button>
+            <button class="tab-button" data-tab="queries">🔍 Queries</button>
+            <button class="tab-button" data-tab="theme">🎨 Theme</button>
+            <button class="tab-button" data-tab="blocks">🧱 Blocks</button>
+            <button class="tab-button" data-tab="content">📄 Content</button>
+            <button class="tab-button" data-tab="plugins">🔌 Plugins</button>
+            <button class="tab-button" data-tab="hooks">🪝 Hooks</button>
+            <button class="tab-button" data-tab="http">🌐 HTTP</button>
+            <button class="tab-button" data-tab="cache">🚀 Cache</button>
+            <button class="tab-button" data-tab="errors">🔍 Errors</button>
+            <button class="tab-button" data-tab="logs">📡 Logs</button>
+            <button class="tab-button" data-tab="cli">⚡ WP-CLI</button>
+            <button class="tab-button" data-tab="summary">⏱️ Summary</button>
+            <button class="tab-button" data-tab="cron">⏰ Cron</button>
+        </div>
+    </div>
+
+    <div class="content">
+        <h3>Content Area</h3>
+        <p>This content area demonstrates how the active tab aligns with the page content when in collapsed state.</p>
+        <p>The collapsible tab navigation saves vertical space while maintaining easy access to all tabs through hover interaction.</p>
+    </div>
+
+    <script>
+        // Initialize collapsible tabs functionality
+        function initializeCollapsibleTabs() {
+            const tabNavContainer = document.querySelector('.tab-nav-container');
+            const tabNavigation = document.querySelector('.tab-navigation');
+            const tabButtons = document.querySelectorAll('.tab-button');
+            
+            if (!tabNavContainer || !tabNavigation) {
+                console.warn('Tab navigation elements not found');
+                return;
+            }
+
+            // Add hover event listeners
+            let hoverTimeout;
+
+            // Mouse enter - expand tabs
+            tabNavigation.addEventListener('mouseenter', function() {
+                clearTimeout(hoverTimeout);
+                tabNavContainer.classList.remove('collapsed');
+            });
+
+            // Mouse leave - collapse tabs with delay
+            tabNavigation.addEventListener('mouseleave', function() {
+                hoverTimeout = setTimeout(() => {
+                    tabNavContainer.classList.add('collapsed');
+                }, 300);
+            });
+
+            // Tab click functionality
+            tabButtons.forEach(button => {
+                button.addEventListener('click', function() {
+                    // Remove active class from all buttons
+                    tabButtons.forEach(btn => btn.classList.remove('active'));
+                    // Add active class to clicked button
+                    this.classList.add('active');
+                    
+                    console.log('Switched to tab:', this.getAttribute('data-tab'));
+                });
+            });
+        }
+
+        // Initialize when page loads
+        document.addEventListener('DOMContentLoaded', initializeCollapsibleTabs);
+    </script>
+</body>
+</html>

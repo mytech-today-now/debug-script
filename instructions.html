@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WordPress Debug Tool Implementation Guide</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.6;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f8f9fa;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #2c3e50;
+            border-bottom: 3px solid #3498db;
+            padding-bottom: 10px;
+        }
+        h2 {
+            color: #34495e;
+            margin-top: 30px;
+            padding: 10px;
+            background: #ecf0f1;
+            border-left: 4px solid #3498db;
+        }
+        h3 {
+            color: #2980b9;
+            margin-top: 25px;
+        }
+        .step {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            padding: 15px;
+            margin: 15px 0;
+        }
+        .step-number {
+            background: #3498db;
+            color: white;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            margin-right: 10px;
+        }
+        .code {
+            background: #2c3e50;
+            color: #ecf0f1;
+            padding: 15px;
+            border-radius: 5px;
+            font-family: 'Courier New', monospace;
+            overflow-x: auto;
+            margin: 10px 0;
+        }
+        .warning {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            color: #856404;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 15px 0;
+        }
+        .success {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 15px 0;
+        }
+        .info {
+            background: #d1ecf1;
+            border: 1px solid #bee5eb;
+            color: #0c5460;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 15px 0;
+        }
+        ul, ol {
+            margin: 10px 0;
+            padding-left: 30px;
+        }
+        li {
+            margin: 5px 0;
+        }
+        .file-path {
+            background: #e9ecef;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: monospace;
+            color: #495057;
+        }
+        .url {
+            color: #007bff;
+            text-decoration: none;
+            font-weight: 500;
+        }
+        .url:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔧 WordPress Debug Tool Implementation Guide</h1>
+        <p><strong>Site:</strong> <a href="https://mytech.today/" class="url">https://mytech.today/</a></p>
+        <p><strong>Tool:</strong> debug-script/debug.php</p>
+        <p><strong>Purpose:</strong> Comprehensive WordPress diagnostics for content, plugins, and cURL issues</p>
+
+        <div class="info">
+            <strong>📋 What This Tool Does:</strong>
+            <ul>
+                <li>Detects if <code>the_content()</code> is called on pages</li>
+                <li>Tests plugin conflicts and compatibility</li>
+                <li>Analyzes shortcodes and content processing</li>
+                <li>Diagnoses cURL and HTTP request issues</li>
+                <li>Provides performance timing and export capabilities</li>
+            </ul>
+        </div>
+
+        <h2>🚀 Method 1: Quick Implementation (Recommended)</h2>
+
+        <div class="step">
+            <span class="step-number">1</span>
+            <strong>Upload the Debug File</strong>
+            <p>Upload <span class="file-path">debug.php</span> to your WordPress root directory via FTP, cPanel File Manager, or hosting control panel.</p>
+            <div class="code">
+# Upload to: /public_html/debug.php
+# Or: /www/debug.php
+# Or: /htdocs/debug.php
+# (depending on your hosting setup)
+            </div>
+        </div>
+
+        <div class="step">
+            <span class="step-number">2</span>
+            <strong>Access the Debug Tool</strong>
+            <p>Navigate to your debug tool URL in a web browser:</p>
+            <div class="code">
+https://mytech.today/debug.php
+            </div>
+            <p>The tool will automatically detect the current page and provide diagnostics.</p>
+        </div>
+
+        <div class="step">
+            <span class="step-number">3</span>
+            <strong>Test Different Pages</strong>
+            <p>Add the <code>?page_id=</code> parameter to test specific pages:</p>
+            <div class="code">
+https://mytech.today/debug.php?page_id=123
+https://mytech.today/debug.php?page_id=456
+            </div>
+        </div>
+
+        <h2>🔧 Method 2: WordPress Integration</h2>
+
+        <div class="step">
+            <span class="step-number">1</span>
+            <strong>Create a Custom Page Template</strong>
+            <p>In your active theme folder, create <span class="file-path">page-debug.php</span>:</p>
+            <div class="code">
+&lt;?php
+/*
+Template Name: Debug Tool
+*/
+
+// Include the debug script
+include_once(ABSPATH . 'debug.php');
+            </div>
+        </div>
+
+        <div class="step">
+            <span class="step-number">2</span>
+            <strong>Create a WordPress Page</strong>
+            <ul>
+                <li>Go to <strong>Pages → Add New</strong> in WordPress admin</li>
+                <li>Title: "Debug Tool" (or any name you prefer)</li>
+                <li>In <strong>Page Attributes</strong>, select <strong>Template: Debug Tool</strong></li>
+                <li>Publish the page</li>
+            </ul>
+        </div>
+
+        <div class="step">
+            <span class="step-number">3</span>
+            <strong>Access via WordPress URL</strong>
+            <div class="code">
+https://mytech.today/debug-tool/
+            </div>
+        </div>
+
+        <h2>⚙️ Method 3: Plugin Integration</h2>
+
+        <div class="step">
+            <span class="step-number">1</span>
+            <strong>Add to functions.php</strong>
+            <p>Add this code to your theme's <span class="file-path">functions.php</span> file:</p>
+            <div class="code">
+// Add debug tool to admin menu
+function add_debug_tool_menu() {
+    if (current_user_can('manage_options')) {
+        add_management_page(
+            'Debug Tool',
+            'Debug Tool',
+            'manage_options',
+            'debug-tool',
+            'debug_tool_page'
+        );
+    }
+}
+add_action('admin_menu', 'add_debug_tool_menu');
+
+function debug_tool_page() {
+    include_once(ABSPATH . 'debug.php');
+}
+            </div>
+        </div>
+
+        <div class="step">
+            <span class="step-number">2</span>
+            <strong>Access via WordPress Admin</strong>
+            <p>Go to <strong>Tools → Debug Tool</strong> in your WordPress admin dashboard.</p>
+        </div>
+
+        <h2>🔒 Security Considerations</h2>
+
+        <div class="warning">
+            <strong>⚠️ Important Security Notes:</strong>
+            <ul>
+                <li><strong>Remove after use:</strong> Delete debug.php when debugging is complete</li>
+                <li><strong>Admin only:</strong> Restrict access to administrators only</li>
+                <li><strong>Staging first:</strong> Test on staging environment before production</li>
+                <li><strong>Backup:</strong> Always backup your site before implementing</li>
+            </ul>
+        </div>
+
+        <div class="step">
+            <span class="step-number">1</span>
+            <strong>Add Access Control (Recommended)</strong>
+            <p>Add this security check at the top of debug.php (after the opening PHP tag):</p>
+            <div class="code">
+// Security: Restrict to administrators only
+if (!current_user_can('manage_options')) {
+    wp_die('Access denied. Administrator privileges required.');
+}
+
+// Or restrict by IP address
+$allowed_ips = ['YOUR.IP.ADDRESS.HERE', '127.0.0.1'];
+if (!in_array($_SERVER['REMOTE_ADDR'], $allowed_ips)) {
+    wp_die('Access denied from this IP address.');
+}
+            </div>
+        </div>
+
+        <h2>🧪 Testing the Implementation</h2>
+
+        <div class="step">
+            <span class="step-number">1</span>
+            <strong>Verify Basic Functionality</strong>
+            <ul>
+                <li>✅ Debug box appears at bottom of page</li>
+                <li>✅ Toggle visibility button works (📦/📋)</li>
+                <li>✅ Dark/light theme toggle works (🌓)</li>
+                <li>✅ Export button generates JSON file (💾)</li>
+            </ul>
+        </div>
+
+        <div class="step">
+            <span class="step-number">2</span>
+            <strong>Test Diagnostic Features</strong>
+            <ul>
+                <li>✅ Content detection shows if <code>the_content()</code> is called</li>
+                <li>✅ Plugin conflict tester lists active plugins</li>
+                <li>✅ Shortcode analysis shows registered shortcodes</li>
+                <li>✅ cURL diagnostics test external connectivity</li>
+            </ul>
+        </div>
+
+        <div class="step">
+            <span class="step-number">3</span>
+            <strong>Performance Verification</strong>
+            <ul>
+                <li>✅ Performance timing shows execution times</li>
+                <li>✅ Page load impact is minimal (&lt;100ms)</li>
+                <li>✅ Caching works (repeated tests show cached results)</li>
+            </ul>
+        </div>
+
+        <h2>🎯 Usage Examples</h2>
+
+        <h3>Debugging Content Issues</h3>
+        <div class="step">
+            <p><strong>Problem:</strong> Page content not displaying</p>
+            <p><strong>Solution:</strong> Check if "the_content() called" shows ❌, indicating template issue</p>
+        </div>
+
+        <h3>Plugin Conflict Detection</h3>
+        <div class="step">
+            <p><strong>Problem:</strong> Site functionality broken after plugin update</p>
+            <p><strong>Solution:</strong> Use plugin conflict tester to identify problematic plugins</p>
+        </div>
+
+        <h3>HTTP Request Issues</h3>
+        <div class="step">
+            <p><strong>Problem:</strong> External API calls failing</p>
+            <p><strong>Solution:</strong> Check cURL diagnostics for timeout, SSL, or connectivity issues</p>
+        </div>
+
+        <h2>🔧 Troubleshooting</h2>
+
+        <h3>🚨 HTTP ERROR 500 (Fixed in v2.1)</h3>
+        <div class="step">
+            <strong>Problem:</strong> "This page isn't working - HTTP ERROR 500"
+            <p><strong>✅ Solution:</strong> This has been fixed in the latest version. The debug tool now automatically:</p>
+            <ul>
+                <li>✅ <strong>Auto-detects WordPress:</strong> Searches multiple paths for wp-load.php</li>
+                <li>✅ <strong>Loads WordPress automatically:</strong> No manual configuration needed</li>
+                <li>✅ <strong>Shows helpful errors:</strong> Clear instructions if WordPress not found</li>
+                <li>✅ <strong>Security checks:</strong> Requires administrator access when used standalone</li>
+            </ul>
+            <div class="code">
+# The tool now searches these paths automatically:
+/public_html/debug.php → /public_html/wp-load.php
+/debug.php → /wp-load.php
+/subdirectory/debug.php → /wp-load.php
+            </div>
+        </div>
+
+        <h3>🔒 Access Denied Error</h3>
+        <div class="step">
+            <strong>Problem:</strong> "Access Denied - Administrator privileges required"
+            <p><strong>Solutions:</strong></p>
+            <ul>
+                <li><strong>Login as Administrator:</strong> Use the login link provided</li>
+                <li><strong>Add your IP to whitelist:</strong> Edit debug.php and add your IP address</li>
+                <li><strong>Use WordPress integration:</strong> Access via admin dashboard instead</li>
+            </ul>
+            <div class="code">
+// Add your IP address to the whitelist in debug.php:
+$allowed_ips = [
+    '127.0.0.1',
+    '::1',
+    'YOUR.IP.ADDRESS.HERE'  // Add this line
+];
+            </div>
+        </div>
+
+        <h3>Common Issues</h3>
+        <div class="step">
+            <strong>Debug box not appearing:</strong>
+            <ul>
+                <li>Check if <code>wp_footer()</code> is called in your theme</li>
+                <li>Verify debug.php is uploaded correctly</li>
+                <li>Check for PHP errors in error logs</li>
+                <li>Ensure you're logged in as administrator</li>
+            </ul>
+        </div>
+
+        <div class="step">
+            <strong>WordPress not found error:</strong>
+            <ul>
+                <li><strong>Move file to WordPress root:</strong> Same directory as wp-config.php</li>
+                <li><strong>Check file permissions:</strong> Ensure debug.php is readable (644)</li>
+                <li><strong>Verify WordPress installation:</strong> Confirm wp-load.php exists</li>
+                <li><strong>Check hosting structure:</strong> Some hosts use different directory layouts</li>
+            </ul>
+        </div>
+
+        <div class="step">
+            <strong>Permission errors:</strong>
+            <ul>
+                <li>Ensure file permissions are set correctly (644)</li>
+                <li>Check if user has administrator privileges</li>
+                <li>Verify WordPress is loaded properly</li>
+                <li>Try accessing via WordPress admin instead of direct URL</li>
+            </ul>
+        </div>
+
+        <div class="step">
+            <strong>Styling issues:</strong>
+            <ul>
+                <li>Try toggling dark/light theme (🌓 button)</li>
+                <li>Check for CSS conflicts with theme</li>
+                <li>Use browser developer tools to inspect styles</li>
+                <li>Clear browser cache and try again</li>
+            </ul>
+        </div>
+
+        <h2>📱 Mobile Usage</h2>
+        <div class="info">
+            The debug tool is fully responsive and works on mobile devices:
+            <ul>
+                <li><strong>Touch-friendly:</strong> All buttons optimized for touch</li>
+                <li><strong>Responsive design:</strong> Adapts to screen size</li>
+                <li><strong>Keyboard shortcuts:</strong> Ctrl+D works on mobile browsers</li>
+            </ul>
+        </div>
+
+        <h2>🗑️ Cleanup After Debugging</h2>
+
+        <div class="warning">
+            <strong>🧹 Important: Remove Debug Tool After Use</strong>
+            <ol>
+                <li>Delete <span class="file-path">debug.php</span> from server</li>
+                <li>Remove any custom page templates created</li>
+                <li>Remove functions.php additions if used</li>
+                <li>Clear any caching plugins</li>
+            </ol>
+        </div>
+
+        <div class="success">
+            <strong>✅ Implementation Complete!</strong><br>
+            Your WordPress debug tool is now ready to help diagnose content, plugin, and connectivity issues on <a href="https://mytech.today/" class="url">https://mytech.today/</a>
+        </div>
+
+        <hr style="margin: 30px 0;">
+        <p style="text-align: center; color: #6c757d; font-size: 0.9em;">
+            <strong>Debug Tool v2.1</strong> | Fixed HTTP 500 error with WordPress bootstrap, enhanced with cURL diagnostics, performance timing, and mobile optimization
+        </p>
+    </div>
+</body>
+</html>
