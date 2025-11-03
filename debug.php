@@ -40,28 +40,245 @@ $debug_start_memory = memory_get_usage(true);
 // WORDPRESS INTEGRATION & AUTHENTICATION
 // ============================================================================
 
-// WordPress integration check
+// CRITICAL SECURITY: Stop all output until authentication is verified
+ob_start();
+
+// WordPress integration check with enhanced error handling
+$wordpress_loaded = false;
 if (!function_exists('wp_get_current_user')) {
     // Load WordPress if not already loaded
     $wp_load_paths = [
         '../../../wp-load.php',
-        '../../wp-load.php', 
+        '../../wp-load.php',
         '../wp-load.php',
         'wp-load.php'
     ];
-    
+
     foreach ($wp_load_paths as $path) {
         if (file_exists($path)) {
             require_once $path;
+            $wordpress_loaded = true;
             break;
         }
     }
+
+    // If WordPress still not loaded, deny access
+    if (!function_exists('wp_get_current_user')) {
+        ob_end_clean();
+        http_response_code(500);
+        die('SECURITY ERROR: WordPress not accessible. Access denied.');
+    }
+} else {
+    $wordpress_loaded = true;
 }
 
-// Security check - Admin only
+// ENHANCED SECURITY CHECKS - Multiple layers of authentication
+$security_passed = false;
+$security_errors = [];
+
+// Layer 1: Verify WordPress is fully loaded
+if (!$wordpress_loaded || !function_exists('current_user_can') || !function_exists('is_user_logged_in')) {
+    $security_errors[] = 'WordPress core functions not available';
+}
+
+// Layer 2: Check if user is logged in
+if (!is_user_logged_in()) {
+    $security_errors[] = 'User not logged in to WordPress';
+}
+
+// Layer 3: Check admin capabilities
 if (!current_user_can('manage_options')) {
+    $security_errors[] = 'Insufficient privileges - Administrator access required';
+}
+
+// Layer 4: Verify user ID exists and is valid
+$current_user = wp_get_current_user();
+if (!$current_user || !$current_user->ID || $current_user->ID === 0) {
+    $security_errors[] = 'Invalid user session';
+}
+
+// Layer 5: Check for super admin on multisite
+if (is_multisite() && !is_super_admin()) {
+    $security_errors[] = 'Super administrator access required on multisite';
+}
+
+// Layer 6: Additional capability verification
+if (!current_user_can('edit_plugins') || !current_user_can('edit_themes')) {
+    $security_errors[] = 'Advanced administrative capabilities required';
+}
+
+// SECURITY DECISION: If any check fails, deny access immediately
+if (!empty($security_errors)) {
+    ob_end_clean();
+
+    // Log security attempt for monitoring
+    if (function_exists('error_log')) {
+        $user_agent = $_SERVER['HTTP_USER_AGENT'] ?? 'Unknown';
+        $ip_address = $_SERVER['REMOTE_ADDR'] ?? 'Unknown';
+        $timestamp = date('Y-m-d H:i:s');
+
+        error_log("SECURITY ALERT: Unauthorized debug.php access attempt - IP: {$ip_address}, User-Agent: {$user_agent}, Time: {$timestamp}, Errors: " . implode(', ', $security_errors));
+    }
+
+    // Send security headers
+    header('X-Content-Type-Options: nosniff');
+    header('X-Frame-Options: DENY');
+    header('X-XSS-Protection: 1; mode=block');
+
     http_response_code(403);
-    wp_die('Access denied. Administrator privileges required.');
+
+    // Enhanced error message with security details
+    $error_message = "🛡️ SECURITY ACCESS DENIED\n\n";
+    $error_message .= "This WordPress Debug Tool requires administrator privileges.\n\n";
+    $error_message .= "Security Issues Detected:\n";
+    foreach ($security_errors as $error) {
+        $error_message .= "• {$error}\n";
+    }
+    $error_message .= "\nTo access this tool:\n";
+    $error_message .= "1. Log in to WordPress as an Administrator\n";
+    $error_message .= "2. Ensure you have 'manage_options' capability\n";
+    $error_message .= "3. Try accessing the tool again\n\n";
+    $error_message .= "If you believe this is an error, contact your WordPress administrator.\n\n";
+    $error_message .= "Security Event Logged: " . date('Y-m-d H:i:s');
+
+    // Use wp_die if available, otherwise use plain die
+    if (function_exists('wp_die')) {
+        wp_die($error_message, 'Access Denied - WordPress Debug Tool', ['response' => 403]);
+    } else {
+        die($error_message);
+    }
+}
+
+// SECURITY PASSED: Clear output buffer and continue
+ob_end_clean();
+$security_passed = true;
+
+// Additional security logging for successful access
+if (function_exists('error_log')) {
+    $user_info = $current_user->user_login ?? 'Unknown';
+    $ip_address = $_SERVER['REMOTE_ADDR'] ?? 'Unknown';
+    $user_agent = $_SERVER['HTTP_USER_AGENT'] ?? 'Unknown';
+    $timestamp = date('Y-m-d H:i:s');
+
+    error_log("DEBUG TOOL ACCESS: Authorized access granted - User: {$user_info}, IP: {$ip_address}, User-Agent: {$user_agent}, Time: {$timestamp}");
+}
+
+// ============================================================================
+// ENHANCED SECURITY FUNCTIONS
+// ============================================================================
+
+/**
+ * Continuous security verification function
+ * Called periodically to ensure session is still valid
+ */
+function verify_debug_security() {
+    $errors = [];
+
+    // Check WordPress functions are available
+    if (!function_exists('is_user_logged_in') || !function_exists('current_user_can')) {
+        $errors[] = 'WordPress functions not available';
+    }
+
+    // Check user is still logged in
+    if (!is_user_logged_in()) {
+        $errors[] = 'User session expired';
+    }
+
+    // Check admin capabilities
+    if (!current_user_can('manage_options')) {
+        $errors[] = 'Insufficient privileges';
+    }
+
+    // Check user ID is valid
+    $current_user = wp_get_current_user();
+    if (!$current_user || !$current_user->ID || $current_user->ID === 0) {
+        $errors[] = 'Invalid user session';
+    }
+
+    return empty($errors) ? true : $errors;
+}
+
+/**
+ * Mobile device detection and additional security for mobile
+ */
+function is_mobile_device() {
+    $user_agent = $_SERVER['HTTP_USER_AGENT'] ?? '';
+    $mobile_keywords = ['Mobile', 'Android', 'iPhone', 'iPad', 'iPod', 'BlackBerry', 'Windows Phone'];
+
+    foreach ($mobile_keywords as $keyword) {
+        if (stripos($user_agent, $keyword) !== false) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/**
+ * Enhanced mobile security check
+ */
+function verify_mobile_security() {
+    if (!is_mobile_device()) {
+        return true; // Not mobile, standard checks apply
+    }
+
+    // Additional mobile-specific security checks
+    $mobile_errors = [];
+
+    // Check for valid WordPress session on mobile
+    if (!wp_validate_auth_cookie()) {
+        $mobile_errors[] = 'Invalid authentication cookie on mobile device';
+    }
+
+    // Check session token validity
+    $user = wp_get_current_user();
+    if ($user && $user->ID) {
+        $sessions = WP_Session_Tokens::get_instance($user->ID);
+        if (!$sessions->verify(wp_get_session_token())) {
+            $mobile_errors[] = 'Invalid session token on mobile device';
+        }
+    }
+
+    // Additional mobile capability check
+    if (!current_user_can('edit_plugins') || !current_user_can('edit_themes')) {
+        $mobile_errors[] = 'Advanced capabilities required on mobile device';
+    }
+
+    return empty($mobile_errors) ? true : $mobile_errors;
+}
+
+// MOBILE SECURITY VERIFICATION
+$mobile_security_check = verify_mobile_security();
+if ($mobile_security_check !== true) {
+    // Log mobile security failure
+    if (function_exists('error_log')) {
+        $ip_address = $_SERVER['REMOTE_ADDR'] ?? 'Unknown';
+        $user_agent = $_SERVER['HTTP_USER_AGENT'] ?? 'Unknown';
+        $timestamp = date('Y-m-d H:i:s');
+
+        error_log("MOBILE SECURITY ALERT: Mobile device failed security check - IP: {$ip_address}, User-Agent: {$user_agent}, Time: {$timestamp}, Errors: " . implode(', ', $mobile_security_check));
+    }
+
+    http_response_code(403);
+
+    $mobile_error_message = "🛡️ MOBILE SECURITY ACCESS DENIED\n\n";
+    $mobile_error_message .= "Additional security verification failed for mobile device.\n\n";
+    $mobile_error_message .= "Mobile Security Issues:\n";
+    foreach ($mobile_security_check as $error) {
+        $mobile_error_message .= "• {$error}\n";
+    }
+    $mobile_error_message .= "\nFor mobile access:\n";
+    $mobile_error_message .= "1. Ensure you're logged in to WordPress\n";
+    $mobile_error_message .= "2. Clear browser cache and cookies\n";
+    $mobile_error_message .= "3. Log out and log back in to WordPress\n";
+    $mobile_error_message .= "4. Try accessing from a desktop browser first\n\n";
+    $mobile_error_message .= "Mobile Security Event: " . date('Y-m-d H:i:s');
+
+    if (function_exists('wp_die')) {
+        wp_die($mobile_error_message, 'Mobile Access Denied - WordPress Debug Tool', ['response' => 403]);
+    } else {
+        die($mobile_error_message);
+    }
 }
 
 // ============================================================================
@@ -76,9 +293,64 @@ if (isset($_POST['action']) && $_POST['action'] === 'load_debug_section') {
 
     header('Content-Type: application/json');
 
-    // Verify nonce
+    // ENHANCED AJAX SECURITY CHECKS
+    $ajax_security_errors = [];
+
+    // Check 1: Verify nonce
     if (!wp_verify_nonce($_POST['nonce'], 'debug_2_nonce')) {
-        wp_send_json_error('Security check failed');
+        $ajax_security_errors[] = 'Invalid security nonce';
+    }
+
+    // Check 2: Re-verify user authentication (session could have expired)
+    if (!is_user_logged_in()) {
+        $ajax_security_errors[] = 'User session expired';
+    }
+
+    // Check 3: Re-verify admin capabilities
+    if (!current_user_can('manage_options')) {
+        $ajax_security_errors[] = 'Insufficient privileges for AJAX request';
+    }
+
+    // Check 4: Verify user ID consistency
+    $current_user = wp_get_current_user();
+    if (!$current_user || !$current_user->ID || $current_user->ID === 0) {
+        $ajax_security_errors[] = 'Invalid user session for AJAX';
+    }
+
+    // Check 5: Verify request method
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        $ajax_security_errors[] = 'Invalid request method';
+    }
+
+    // Check 6: Basic rate limiting (prevent abuse)
+    $rate_limit_key = 'debug_ajax_' . ($current_user->ID ?? 'unknown');
+    $current_time = time();
+    $last_request = get_transient($rate_limit_key);
+
+    if ($last_request && ($current_time - $last_request) < 1) {
+        $ajax_security_errors[] = 'Rate limit exceeded - too many requests';
+    }
+
+    // Set rate limiting
+    set_transient($rate_limit_key, $current_time, 60);
+
+    // If any AJAX security check fails, deny the request
+    if (!empty($ajax_security_errors)) {
+        // Log security attempt
+        if (function_exists('error_log')) {
+            $ip_address = $_SERVER['REMOTE_ADDR'] ?? 'Unknown';
+            $user_agent = $_SERVER['HTTP_USER_AGENT'] ?? 'Unknown';
+            $timestamp = date('Y-m-d H:i:s');
+
+            error_log("AJAX SECURITY ALERT: Unauthorized debug AJAX request - IP: {$ip_address}, User-Agent: {$user_agent}, Time: {$timestamp}, Errors: " . implode(', ', $ajax_security_errors));
+        }
+
+        ob_clean();
+        wp_send_json_error([
+            'message' => 'AJAX Security check failed',
+            'errors' => $ajax_security_errors,
+            'timestamp' => date('Y-m-d H:i:s')
+        ]);
     }
 
     $section_id = sanitize_text_field($_POST['section_id']);
@@ -110,6 +382,43 @@ if (isset($_POST['action']) && $_POST['action'] === 'load_debug_section') {
         ob_clean();
         wp_send_json_error('Section generation failed: ' . $e->getMessage());
     }
+}
+
+// Handle authentication verification AJAX requests
+if (isset($_POST['action']) && $_POST['action'] === 'verify_debug_auth') {
+    header('Content-Type: application/json');
+
+    // Verify nonce
+    if (!wp_verify_nonce($_POST['nonce'], 'debug_2_nonce')) {
+        wp_send_json_error('Invalid nonce for auth verification');
+    }
+
+    // Run comprehensive security check
+    $auth_check = verify_debug_security();
+    if ($auth_check !== true) {
+        wp_send_json_error([
+            'message' => 'Authentication verification failed',
+            'errors' => $auth_check,
+            'timestamp' => date('Y-m-d H:i:s')
+        ]);
+    }
+
+    // Check mobile security if applicable
+    $mobile_check = verify_mobile_security();
+    if ($mobile_check !== true) {
+        wp_send_json_error([
+            'message' => 'Mobile authentication verification failed',
+            'errors' => $mobile_check,
+            'timestamp' => date('Y-m-d H:i:s')
+        ]);
+    }
+
+    // All checks passed
+    wp_send_json_success([
+        'message' => 'Authentication verified',
+        'user' => wp_get_current_user()->user_login,
+        'timestamp' => date('Y-m-d H:i:s')
+    ]);
 }
 
 // ============================================================================
@@ -194,24 +503,112 @@ function generate_performance_dashboard() {
 
     $html .= '</div>';
 
-    // Performance recommendations
-    $html .= '<h4>🚀 Performance Recommendations</h4>';
-    $html .= '<div class="debug-info">';
+    // Performance recommendations with actionable advice
+    $html .= '<h4>🚀 Performance Recommendations & Solutions</h4>';
+
+    $admin_url = admin_url();
+    $has_issues = false;
 
     if ($execution_time > 2) {
-        $html .= '<div>⚠️ Slow execution time detected - consider caching</div>';
-    }
-    if ($current_memory > 128 * 1024 * 1024) {
-        $html .= '<div>⚠️ High memory usage - optimize plugins and queries</div>';
-    }
-    if ($query_count > 50) {
-        $html .= '<div>⚠️ High query count - review database efficiency</div>';
+        $has_issues = true;
+        $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #dc3545; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+        $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+        $html .= '<div style="flex: 1;">';
+        $html .= '<h6 style="margin: 0 0 8px 0; color: #dc3545;">⚠️ Slow Execution Time (' . round($execution_time * 1000, 2) . 'ms)</h6>';
+        $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Page load time is slow. Install a caching plugin to improve performance.</p>';
+        $html .= '<div style="font-size: 13px; color: #495057;">';
+        $html .= '<strong>⏱️ Time:</strong> 10-15 minutes | <strong>🎯 Impact:</strong> High Performance Boost';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '<div style="margin-left: 15px;">';
+        $html .= '<a href="' . $admin_url . 'plugin-install.php?s=wp+super+cache&tab=search&type=term" target="_blank" style="display: inline-block; background: #dc3545; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔌 Install Cache</a><br>';
+        $html .= '<a href="https://developer.wordpress.org/advanced-administration/performance/optimization/" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📚 Guide</a>';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '</div>';
     }
 
-    $html .= '<div>💡 Enable object caching for better performance</div>';
-    $html .= '<div>💡 Use a CDN for static assets</div>';
-    $html .= '<div>💡 Optimize images and enable compression</div>';
+    if ($current_memory > 128 * 1024 * 1024) {
+        $has_issues = true;
+        $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #ff9800; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+        $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+        $html .= '<div style="flex: 1;">';
+        $html .= '<h6 style="margin: 0 0 8px 0; color: #ff9800;">⚠️ High Memory Usage (' . round($current_memory / 1024 / 1024, 2) . 'MB)</h6>';
+        $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Memory usage is high. Deactivate unused plugins and optimize database queries.</p>';
+        $html .= '<div style="font-size: 13px; color: #495057;">';
+        $html .= '<strong>⏱️ Time:</strong> 20-30 minutes | <strong>🎯 Impact:</strong> Medium Performance';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '<div style="margin-left: 15px;">';
+        $html .= '<a href="' . $admin_url . 'plugins.php" target="_blank" style="display: inline-block; background: #ff9800; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔌 Manage Plugins</a><br>';
+        $html .= '<a href="' . $admin_url . 'plugin-install.php?s=query+monitor&tab=search&type=term" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔍 Debug Tool</a>';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '</div>';
+    }
+
+    if ($query_count > 50) {
+        $has_issues = true;
+        $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #ff9800; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+        $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+        $html .= '<div style="flex: 1;">';
+        $html .= '<h6 style="margin: 0 0 8px 0; color: #ff9800;">⚠️ High Database Query Count (' . $query_count . ' queries)</h6>';
+        $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Too many database queries. Install Query Monitor to identify slow queries.</p>';
+        $html .= '<div style="font-size: 13px; color: #495057;">';
+        $html .= '<strong>⏱️ Time:</strong> 30-60 minutes | <strong>🎯 Impact:</strong> High Performance';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '<div style="margin-left: 15px;">';
+        $html .= '<a href="' . $admin_url . 'plugin-install.php?s=query+monitor&tab=search&type=term" target="_blank" style="display: inline-block; background: #ff9800; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔍 Install Monitor</a><br>';
+        $html .= '<a href="https://developer.wordpress.org/advanced-administration/performance/optimization/" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📚 Optimize Guide</a>';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '</div>';
+    }
+
+    // General performance improvements
+    $html .= '<div style="background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); border-radius: 8px; padding: 20px; margin: 15px 0;">';
+    $html .= '<h5 style="color: #4caf50; margin: 0 0 15px 0; font-size: 16px;">💡 General Performance Improvements</h5>';
+
+    $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #4caf50; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+    $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+    $html .= '<div style="flex: 1;">';
+    $html .= '<h6 style="margin: 0 0 8px 0; color: #4caf50;">🚀 Install Caching Plugin</h6>';
+    $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Caching can improve page load times by 50-80%. Choose from top-rated caching plugins.</p>';
+    $html .= '<div style="font-size: 13px; color: #495057;">';
+    $html .= '<strong>⏱️ Time:</strong> 10 minutes | <strong>🎯 Impact:</strong> Very High Performance';
     $html .= '</div>';
+    $html .= '</div>';
+    $html .= '<div style="margin-left: 15px;">';
+    $html .= '<a href="' . $admin_url . 'plugin-install.php?s=wp+super+cache&tab=search&type=term" target="_blank" style="display: inline-block; background: #4caf50; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔌 WP Super Cache</a><br>';
+    $html .= '<a href="' . $admin_url . 'plugin-install.php?s=w3+total+cache&tab=search&type=term" target="_blank" style="display: inline-block; background: #4caf50; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔌 W3 Total Cache</a>';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '</div>';
+
+    $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #4caf50; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+    $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+    $html .= '<div style="flex: 1;">';
+    $html .= '<h6 style="margin: 0 0 8px 0; color: #4caf50;">🖼️ Optimize Images</h6>';
+    $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Large images slow down your site. Install an image optimization plugin to compress images automatically.</p>';
+    $html .= '<div style="font-size: 13px; color: #495057;">';
+    $html .= '<strong>⏱️ Time:</strong> 5 minutes | <strong>🎯 Impact:</strong> High Performance';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '<div style="margin-left: 15px;">';
+    $html .= '<a href="' . $admin_url . 'plugin-install.php?s=smush&tab=search&type=term" target="_blank" style="display: inline-block; background: #4caf50; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔌 Install Smush</a><br>';
+    $html .= '<a href="' . $admin_url . 'plugin-install.php?s=shortpixel&tab=search&type=term" target="_blank" style="display: inline-block; background: #4caf50; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔌 ShortPixel</a>';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '</div>';
+
+    $html .= '</div>';
+
+    if (!$has_issues) {
+        $html .= '<div class="debug-info" style="background: #d4edda; border-left: 4px solid #28a745; color: #155724;">';
+        $html .= '✅ Performance metrics look good! Consider the general improvements above for even better performance.';
+        $html .= '</div>';
+    }
 
     $html .= '</div>';
     return $html;
@@ -282,13 +679,124 @@ function generate_custom_url_testing() {
         $html .= '<div class="debug-warning">Enter a URL above to test connectivity, response time, and headers.</div>';
     }
 
+    // URL testing optimization with actionable solutions
+    $html .= '<h4>💡 URL Testing & Connectivity Solutions</h4>';
+
+    $admin_url = admin_url();
+    $has_issues = false;
+
+    // Check if there were any URL test failures (if form was submitted)
+    if (isset($_POST['test_custom_url']) && !empty($_POST['custom_url'])) {
+        $test_url = esc_url_raw($_POST['custom_url']);
+        $response = wp_remote_get($test_url, ['timeout' => 10, 'sslverify' => false]);
+
+        if (is_wp_error($response)) {
+            $has_issues = true;
+            $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #dc3545; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+            $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+            $html .= '<div style="flex: 1;">';
+            $html .= '<h6 style="margin: 0 0 8px 0; color: #dc3545;">🔗 URL Connection Failed</h6>';
+            $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">The URL test failed. This could indicate network issues, DNS problems, or server configuration issues.</p>';
+            $html .= '<div style="font-size: 13px; color: #495057;">';
+            $html .= '<strong>⏱️ Time:</strong> 15-30 minutes | <strong>🎯 Impact:</strong> High Connectivity';
+            $html .= '</div>';
+            $html .= '</div>';
+            $html .= '<div style="margin-left: 15px;">';
+            $html .= '<a href="https://wordpress.org/support/article/common-wordpress-errors/#http-error" target="_blank" style="display: inline-block; background: #dc3545; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔧 Fix HTTP Errors</a><br>';
+            $html .= '<a href="https://developer.wordpress.org/plugins/http-api/" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📚 HTTP API Guide</a>';
+            $html .= '</div>';
+            $html .= '</div>';
+            $html .= '</div>';
+        } else {
+            $response_code = wp_remote_retrieve_response_code($response);
+            if ($response_code >= 400) {
+                $has_issues = true;
+                $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #ff9800; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+                $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+                $html .= '<div style="flex: 1;">';
+                $html .= '<h6 style="margin: 0 0 8px 0; color: #ff9800;">⚠️ HTTP Error Response (' . $response_code . ')</h6>';
+                $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">The URL returned an error status code. Check the target server configuration.</p>';
+                $html .= '<div style="font-size: 13px; color: #495057;">';
+                $html .= '<strong>⏱️ Time:</strong> 10-20 minutes | <strong>🎯 Impact:</strong> Medium Connectivity';
+                $html .= '</div>';
+                $html .= '</div>';
+                $html .= '<div style="margin-left: 15px;">';
+                $html .= '<a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Status" target="_blank" style="display: inline-block; background: #ff9800; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📋 HTTP Status Codes</a><br>';
+                $html .= '<a href="https://wordpress.org/support/article/common-wordpress-errors/" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📚 Error Guide</a>';
+                $html .= '</div>';
+                $html .= '</div>';
+                $html .= '</div>';
+            }
+        }
+    }
+
+    // General URL testing recommendations
+    $html .= '<div style="background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); border-radius: 8px; padding: 20px; margin: 15px 0;">';
+    $html .= '<h5 style="color: #4caf50; margin: 0 0 15px 0; font-size: 16px;">🔗 URL Testing Best Practices</h5>';
+
+    $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #4caf50; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+    $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+    $html .= '<div style="flex: 1;">';
+    $html .= '<h6 style="margin: 0 0 8px 0; color: #4caf50;">🧪 API Endpoint Testing</h6>';
+    $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Test external API endpoints to verify connectivity and response times for integrations.</p>';
+    $html .= '<div style="font-size: 13px; color: #495057;">';
+    $html .= '<strong>⏱️ Time:</strong> 5-10 minutes | <strong>🎯 Impact:</strong> High Integration Testing';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '<div style="margin-left: 15px;">';
+    $html .= '<a href="https://developer.wordpress.org/plugins/http-api/" target="_blank" style="display: inline-block; background: #4caf50; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔧 HTTP API Docs</a><br>';
+    $html .= '<a href="https://httpstat.us/" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🧪 Test Service</a>';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '</div>';
+
+    $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #4caf50; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+    $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+    $html .= '<div style="flex: 1;">';
+    $html .= '<h6 style="margin: 0 0 8px 0; color: #4caf50;">🔍 Network Monitoring</h6>';
+    $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Monitor external service connectivity and implement proper error handling for failed requests.</p>';
+    $html .= '<div style="font-size: 13px; color: #495057;">';
+    $html .= '<strong>⏱️ Time:</strong> 20-30 minutes | <strong>🎯 Impact:</strong> High Reliability';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '<div style="margin-left: 15px;">';
+    $html .= '<a href="' . $admin_url . 'plugin-install.php?s=query+monitor&tab=search&type=term" target="_blank" style="display: inline-block; background: #4caf50; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔍 Monitor HTTP</a><br>';
+    $html .= '<a href="https://developer.wordpress.org/plugins/http-api/wp-remote-get/" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📚 Request Handling</a>';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '</div>';
+
+    $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #4caf50; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+    $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+    $html .= '<div style="flex: 1;">';
+    $html .= '<h6 style="margin: 0 0 8px 0; color: #4caf50;">🛡️ Security Testing</h6>';
+    $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Verify SSL certificates and security headers when testing HTTPS endpoints.</p>';
+    $html .= '<div style="font-size: 13px; color: #495057;">';
+    $html .= '<strong>⏱️ Time:</strong> 10-15 minutes | <strong>🎯 Impact:</strong> High Security Validation';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '<div style="margin-left: 15px;">';
+    $html .= '<a href="https://www.ssllabs.com/ssltest/" target="_blank" style="display: inline-block; background: #4caf50; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔒 SSL Test</a><br>';
+    $html .= '<a href="https://securityheaders.com/" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🛡️ Security Headers</a>';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '</div>';
+
+    $html .= '</div>';
+
+    if (!$has_issues) {
+        $html .= '<div class="debug-info" style="background: #d4edda; border-left: 4px solid #28a745; color: #155724;">';
+        $html .= '✅ URL testing functionality is ready! Use the form above to test external URLs and API endpoints.';
+        $html .= '</div>';
+    }
+
     $html .= '</div>';
     return $html;
 }
 
 function generate_wordpress_config() {
     global $wp_version;
-    
+
     $html = '<div class="debug-info">';
     $html .= '<h4>🔧 WordPress Constants & Settings</h4>';
     $html .= '<table class="debug-table">';
@@ -302,8 +810,121 @@ function generate_wordpress_config() {
     $html .= '<tr><td><strong>WP_MEMORY_LIMIT</strong></td><td>' . (defined('WP_MEMORY_LIMIT') ? WP_MEMORY_LIMIT : 'Default') . '</td></tr>';
     $html .= '<tr><td><strong>WP_MAX_MEMORY_LIMIT</strong></td><td>' . (defined('WP_MAX_MEMORY_LIMIT') ? WP_MAX_MEMORY_LIMIT : 'Default') . '</td></tr>';
     $html .= '</table>';
+
+    // Configuration optimization recommendations
+    $html .= '<h4>💡 Configuration Optimization & Actionable Solutions</h4>';
+
+    $admin_url = admin_url();
+    $has_issues = false;
+
+    // Check if WP_DEBUG is enabled in production
+    if (WP_DEBUG && is_ssl()) {
+        $has_issues = true;
+        $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #dc3545; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+        $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+        $html .= '<div style="flex: 1;">';
+        $html .= '<h6 style="margin: 0 0 8px 0; color: #dc3545;">🚨 WP_DEBUG Enabled in Production</h6>';
+        $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Debug mode should be disabled on live sites for security and performance.</p>';
+        $html .= '<div style="font-size: 13px; color: #495057;">';
+        $html .= '<strong>⏱️ Time:</strong> 2 minutes | <strong>🎯 Impact:</strong> Critical Security';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '<div style="margin-left: 15px;">';
+        $html .= '<a href="https://developer.wordpress.org/advanced-administration/debug/debug-wordpress/" target="_blank" style="display: inline-block; background: #dc3545; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔧 Disable Debug</a><br>';
+        $html .= '<a href="https://developer.wordpress.org/advanced-administration/security/hardening/" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📚 Security Guide</a>';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '</div>';
+    }
+
+    // Check PHP version
+    if (version_compare(PHP_VERSION, '8.0', '<')) {
+        $has_issues = true;
+        $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #ff9800; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+        $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+        $html .= '<div style="flex: 1;">';
+        $html .= '<h6 style="margin: 0 0 8px 0; color: #ff9800;">⚠️ Outdated PHP Version (' . PHP_VERSION . ')</h6>';
+        $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">PHP 8.0+ offers better performance and security. Contact your hosting provider to upgrade.</p>';
+        $html .= '<div style="font-size: 13px; color: #495057;">';
+        $html .= '<strong>⏱️ Time:</strong> 15-30 minutes | <strong>🎯 Impact:</strong> High Performance & Security';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '<div style="margin-left: 15px;">';
+        $html .= '<a href="https://wordpress.org/about/requirements/" target="_blank" style="display: inline-block; background: #ff9800; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📋 WP Requirements</a><br>';
+        $html .= '<a href="https://www.php.net/supported-versions.php" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📚 PHP Versions</a>';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '</div>';
+    }
+
+    // Check memory limit
+    $memory_limit = defined('WP_MEMORY_LIMIT') ? WP_MEMORY_LIMIT : ini_get('memory_limit');
+    $memory_mb = intval($memory_limit);
+    if ($memory_mb < 256) {
+        $has_issues = true;
+        $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #ff9800; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+        $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+        $html .= '<div style="flex: 1;">';
+        $html .= '<h6 style="margin: 0 0 8px 0; color: #ff9800;">💾 Low Memory Limit (' . $memory_limit . ')</h6>';
+        $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">WordPress recommends at least 256MB memory. Increase WP_MEMORY_LIMIT in wp-config.php.</p>';
+        $html .= '<div style="font-size: 13px; color: #495057;">';
+        $html .= '<strong>⏱️ Time:</strong> 5-10 minutes | <strong>🎯 Impact:</strong> High Performance';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '<div style="margin-left: 15px;">';
+        $html .= '<a href="https://wordpress.org/support/article/editing-wp-config-php/#increasing-memory-allocated-to-php" target="_blank" style="display: inline-block; background: #ff9800; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔧 Increase Memory</a><br>';
+        $html .= '<a href="https://wordpress.org/support/article/common-wordpress-errors/" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📚 Error Guide</a>';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '</div>';
+    }
+
+    // General configuration recommendations
+    $html .= '<div style="background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); border-radius: 8px; padding: 20px; margin: 15px 0;">';
+    $html .= '<h5 style="color: #4caf50; margin: 0 0 15px 0; font-size: 16px;">🔧 Configuration Best Practices</h5>';
+
+    $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #4caf50; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+    $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+    $html .= '<div style="flex: 1;">';
+    $html .= '<h6 style="margin: 0 0 8px 0; color: #4caf50;">🔒 Secure wp-config.php</h6>';
+    $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Add security keys, disable file editing, and set proper file permissions for wp-config.php.</p>';
+    $html .= '<div style="font-size: 13px; color: #495057;">';
+    $html .= '<strong>⏱️ Time:</strong> 10-15 minutes | <strong>🎯 Impact:</strong> High Security';
     $html .= '</div>';
-    
+    $html .= '</div>';
+    $html .= '<div style="margin-left: 15px;">';
+    $html .= '<a href="https://api.wordpress.org/secret-key/1.1/salt/" target="_blank" style="display: inline-block; background: #4caf50; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔑 Generate Keys</a><br>';
+    $html .= '<a href="https://wordpress.org/support/article/editing-wp-config-php/" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📚 Config Guide</a>';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '</div>';
+
+    $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #4caf50; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+    $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+    $html .= '<div style="flex: 1;">';
+    $html .= '<h6 style="margin: 0 0 8px 0; color: #4caf50;">⚡ Performance Constants</h6>';
+    $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Configure WP_MEMORY_LIMIT, enable compression, and optimize database settings.</p>';
+    $html .= '<div style="font-size: 13px; color: #495057;">';
+    $html .= '<strong>⏱️ Time:</strong> 15-20 minutes | <strong>🎯 Impact:</strong> Medium Performance';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '<div style="margin-left: 15px;">';
+    $html .= '<a href="https://developer.wordpress.org/advanced-administration/performance/optimization/" target="_blank" style="display: inline-block; background: #4caf50; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">⚡ Performance Guide</a><br>';
+    $html .= '<a href="https://wordpress.org/support/article/editing-wp-config-php/" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📚 Config Options</a>';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '</div>';
+
+    $html .= '</div>';
+
+    if (!$has_issues) {
+        $html .= '<div class="debug-info" style="background: #d4edda; border-left: 4px solid #28a745; color: #155724;">';
+        $html .= '✅ WordPress configuration looks good! Consider the optimization practices above for enhanced performance and security.';
+        $html .= '</div>';
+    }
+
+    $html .= '</div>';
+
     return $html;
 }
 
@@ -373,16 +994,152 @@ function generate_security_scan() {
 
     $html .= '</div>';
 
-    // Security issues
+    // Security issues with actionable solutions
     if (!empty($security_issues)) {
-        $html .= '<h4>⚠️ Security Issues & Recommendations</h4>';
-        $html .= '<div class="debug-warning">';
+        $html .= '<h4>⚠️ Security Issues & Actionable Solutions</h4>';
+
+        $admin_url = admin_url();
+
         foreach ($security_issues as $issue) {
-            $html .= '<div>⚠️ ' . esc_html($issue) . '</div>';
+            if (strpos($issue, 'WP_DEBUG is enabled') !== false) {
+                $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #dc3545; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+                $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+                $html .= '<div style="flex: 1;">';
+                $html .= '<h6 style="margin: 0 0 8px 0; color: #dc3545;">🚨 WP_DEBUG Enabled in Production</h6>';
+                $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Debug mode exposes sensitive information. Disable it immediately in wp-config.php.</p>';
+                $html .= '<div style="font-size: 13px; color: #495057;">';
+                $html .= '<strong>⏱️ Time:</strong> 2 minutes | <strong>🎯 Impact:</strong> Critical Security';
+                $html .= '</div>';
+                $html .= '</div>';
+                $html .= '<div style="margin-left: 15px;">';
+                $html .= '<a href="https://developer.wordpress.org/advanced-administration/debug/debug-wordpress/" target="_blank" style="display: inline-block; background: #dc3545; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔧 Fix Guide</a><br>';
+                $html .= '<a href="https://developer.wordpress.org/advanced-administration/security/hardening/" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📚 Security Guide</a>';
+                $html .= '</div>';
+                $html .= '</div>';
+                $html .= '</div>';
+            }
+
+            if (strpos($issue, 'wp-config.php is writable') !== false) {
+                $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #dc3545; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+                $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+                $html .= '<div style="flex: 1;">';
+                $html .= '<h6 style="margin: 0 0 8px 0; color: #dc3545;">🚨 wp-config.php File Permissions</h6>';
+                $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">wp-config.php should not be writable. Set file permissions to 644 or 600.</p>';
+                $html .= '<div style="font-size: 13px; color: #495057;">';
+                $html .= '<strong>⏱️ Time:</strong> 5 minutes | <strong>🎯 Impact:</strong> Critical Security';
+                $html .= '</div>';
+                $html .= '</div>';
+                $html .= '<div style="margin-left: 15px;">';
+                $html .= '<a href="https://developer.wordpress.org/advanced-administration/security/hardening/#file-permissions" target="_blank" style="display: inline-block; background: #dc3545; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔧 Fix Permissions</a><br>';
+                $html .= '<a href="https://wordpress.org/support/article/changing-file-permissions/" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📚 How-To Guide</a>';
+                $html .= '</div>';
+                $html .= '</div>';
+                $html .= '</div>';
+            }
+
+            if (strpos($issue, 'WordPress version is outdated') !== false) {
+                $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #ff9800; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+                $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+                $html .= '<div style="flex: 1;">';
+                $html .= '<h6 style="margin: 0 0 8px 0; color: #ff9800;">⚠️ Outdated WordPress Version</h6>';
+                $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Running an outdated WordPress version exposes security vulnerabilities. Update immediately.</p>';
+                $html .= '<div style="font-size: 13px; color: #495057;">';
+                $html .= '<strong>⏱️ Time:</strong> 10 minutes | <strong>🎯 Impact:</strong> High Security';
+                $html .= '</div>';
+                $html .= '</div>';
+                $html .= '<div style="margin-left: 15px;">';
+                $html .= '<a href="' . $admin_url . 'update-core.php" target="_blank" style="display: inline-block; background: #ff9800; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔄 Update Now</a><br>';
+                $html .= '<a href="https://wordpress.org/support/article/updating-wordpress/" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📚 Update Guide</a>';
+                $html .= '</div>';
+                $html .= '</div>';
+                $html .= '</div>';
+            }
+
+            if (strpos($issue, 'Default "admin" username') !== false) {
+                $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #ff9800; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+                $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+                $html .= '<div style="flex: 1;">';
+                $html .= '<h6 style="margin: 0 0 8px 0; color: #ff9800;">⚠️ Weak Admin Username</h6>';
+                $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Using "admin" as username makes brute force attacks easier. Create a new admin user with a unique username.</p>';
+                $html .= '<div style="font-size: 13px; color: #495057;">';
+                $html .= '<strong>⏱️ Time:</strong> 10 minutes | <strong>🎯 Impact:</strong> Medium Security';
+                $html .= '</div>';
+                $html .= '</div>';
+                $html .= '<div style="margin-left: 15px;">';
+                $html .= '<a href="' . $admin_url . 'user-new.php" target="_blank" style="display: inline-block; background: #ff9800; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">👤 Add New User</a><br>';
+                $html .= '<a href="https://developer.wordpress.org/advanced-administration/security/hardening/#security-through-obscurity" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📚 Security Guide</a>';
+                $html .= '</div>';
+                $html .= '</div>';
+                $html .= '</div>';
+            }
+
+            if (strpos($issue, 'not using HTTPS/SSL') !== false) {
+                $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #dc3545; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+                $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+                $html .= '<div style="flex: 1;">';
+                $html .= '<h6 style="margin: 0 0 8px 0; color: #dc3545;">🔒 No SSL Certificate</h6>';
+                $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">HTTPS is essential for security and SEO. Install an SSL certificate and force HTTPS.</p>';
+                $html .= '<div style="font-size: 13px; color: #495057;">';
+                $html .= '<strong>⏱️ Time:</strong> 30-60 minutes | <strong>🎯 Impact:</strong> Critical Security & SEO';
+                $html .= '</div>';
+                $html .= '</div>';
+                $html .= '<div style="margin-left: 15px;">';
+                $html .= '<a href="' . $admin_url . 'plugin-install.php?s=really+simple+ssl&tab=search&type=term" target="_blank" style="display: inline-block; background: #dc3545; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔌 SSL Plugin</a><br>';
+                $html .= '<a href="https://wordpress.org/support/article/https-for-wordpress/" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📚 HTTPS Guide</a>';
+                $html .= '</div>';
+                $html .= '</div>';
+                $html .= '</div>';
+            }
         }
+
+        // Additional security recommendations
+        $html .= '<div style="background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); border-radius: 8px; padding: 20px; margin: 15px 0;">';
+        $html .= '<h5 style="color: #4caf50; margin: 0 0 15px 0; font-size: 16px;">🛡️ Additional Security Improvements</h5>';
+
+        $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #4caf50; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+        $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+        $html .= '<div style="flex: 1;">';
+        $html .= '<h6 style="margin: 0 0 8px 0; color: #4caf50;">🔐 Install Security Plugin</h6>';
+        $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">A security plugin provides firewall protection, malware scanning, and login security.</p>';
+        $html .= '<div style="font-size: 13px; color: #495057;">';
+        $html .= '<strong>⏱️ Time:</strong> 15 minutes | <strong>🎯 Impact:</strong> High Security';
         $html .= '</div>';
+        $html .= '</div>';
+        $html .= '<div style="margin-left: 15px;">';
+        $html .= '<a href="' . $admin_url . 'plugin-install.php?s=wordfence&tab=search&type=term" target="_blank" style="display: inline-block; background: #4caf50; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔌 Wordfence</a><br>';
+        $html .= '<a href="' . $admin_url . 'plugin-install.php?s=sucuri&tab=search&type=term" target="_blank" style="display: inline-block; background: #4caf50; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔌 Sucuri</a>';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '</div>';
+
+        $html .= '</div>';
+
     } else {
-        $html .= '<div class="debug-info">✅ No major security issues detected</div>';
+        $html .= '<div class="debug-info" style="background: #d4edda; border-left: 4px solid #28a745; color: #155724;">';
+        $html .= '✅ No major security issues detected! Your site has good basic security.';
+        $html .= '</div>';
+
+        // Still show general security recommendations
+        $html .= '<div style="background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); border-radius: 8px; padding: 20px; margin: 15px 0;">';
+        $html .= '<h5 style="color: #4caf50; margin: 0 0 15px 0; font-size: 16px;">🛡️ Enhance Security Further</h5>';
+
+        $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #4caf50; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+        $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+        $html .= '<div style="flex: 1;">';
+        $html .= '<h6 style="margin: 0 0 8px 0; color: #4caf50;">🔐 Install Security Plugin</h6>';
+        $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Add an extra layer of protection with a comprehensive security plugin.</p>';
+        $html .= '<div style="font-size: 13px; color: #495057;">';
+        $html .= '<strong>⏱️ Time:</strong> 15 minutes | <strong>🎯 Impact:</strong> High Security';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '<div style="margin-left: 15px;">';
+        $html .= '<a href="' . $admin_url . 'plugin-install.php?s=wordfence&tab=search&type=term" target="_blank" style="display: inline-block; background: #4caf50; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔌 Wordfence</a><br>';
+        $html .= '<a href="https://developer.wordpress.org/advanced-administration/security/hardening/" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📚 Security Guide</a>';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '</div>';
+
+        $html .= '</div>';
     }
 
     $html .= '</div>';
@@ -545,6 +1302,96 @@ function generate_database_tables() {
         $html .= '<div class="debug-error">Database analysis failed: ' . esc_html($e->getMessage()) . '</div>';
     }
 
+    // Database optimization recommendations
+    $html .= '<h4>💡 Database Optimization & Actionable Solutions</h4>';
+
+    $admin_url = admin_url();
+    $has_issues = false;
+
+    // Check for large database size
+    if ($db_size && $db_size > 500) {
+        $has_issues = true;
+        $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #ff9800; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+        $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+        $html .= '<div style="flex: 1;">';
+        $html .= '<h6 style="margin: 0 0 8px 0; color: #ff9800;">💾 Large Database Size (' . $db_size . ' MB)</h6>';
+        $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Large database can slow queries. Consider cleanup and optimization.</p>';
+        $html .= '<div style="font-size: 13px; color: #495057;">';
+        $html .= '<strong>⏱️ Time:</strong> 30-60 minutes | <strong>🎯 Impact:</strong> High Performance';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '<div style="margin-left: 15px;">';
+        $html .= '<a href="' . $admin_url . 'plugin-install.php?s=wp+optimize&tab=search&type=term" target="_blank" style="display: inline-block; background: #ff9800; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔧 WP-Optimize</a><br>';
+        $html .= '<a href="https://developer.wordpress.org/advanced-administration/performance/optimization/#database-optimization" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📚 DB Guide</a>';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '</div>';
+    }
+
+    // Check for too many tables
+    if ($table_count && $table_count > 100) {
+        $has_issues = true;
+        $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #ff9800; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+        $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+        $html .= '<div style="flex: 1;">';
+        $html .= '<h6 style="margin: 0 0 8px 0; color: #ff9800;">📋 Many Database Tables (' . $table_count . ' tables)</h6>';
+        $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">High table count may indicate unused plugin data. Review and cleanup.</p>';
+        $html .= '<div style="font-size: 13px; color: #495057;">';
+        $html .= '<strong>⏱️ Time:</strong> 20-30 minutes | <strong>🎯 Impact:</strong> Medium Performance';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '<div style="margin-left: 15px;">';
+        $html .= '<a href="' . $admin_url . 'plugins.php?plugin_status=inactive" target="_blank" style="display: inline-block; background: #ff9800; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🗑️ Remove Plugins</a><br>';
+        $html .= '<a href="' . $admin_url . 'plugin-install.php?s=wp+optimize&tab=search&type=term" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔧 DB Cleanup</a>';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '</div>';
+    }
+
+    // General database maintenance recommendations
+    $html .= '<div style="background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); border-radius: 8px; padding: 20px; margin: 15px 0;">';
+    $html .= '<h5 style="color: #4caf50; margin: 0 0 15px 0; font-size: 16px;">🗄️ Database Maintenance Best Practices</h5>';
+
+    $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #4caf50; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+    $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+    $html .= '<div style="flex: 1;">';
+    $html .= '<h6 style="margin: 0 0 8px 0; color: #4caf50;">🔄 Regular Database Optimization</h6>';
+    $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Optimize database tables regularly to maintain performance and reduce size.</p>';
+    $html .= '<div style="font-size: 13px; color: #495057;">';
+    $html .= '<strong>⏱️ Time:</strong> 10 minutes | <strong>🎯 Impact:</strong> High Performance';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '<div style="margin-left: 15px;">';
+    $html .= '<a href="' . $admin_url . 'plugin-install.php?s=wp+optimize&tab=search&type=term" target="_blank" style="display: inline-block; background: #4caf50; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔧 Install WP-Optimize</a><br>';
+    $html .= '<a href="https://wordpress.org/plugins/wp-optimize/" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📚 About</a>';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '</div>';
+
+    $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #4caf50; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+    $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+    $html .= '<div style="flex: 1;">';
+    $html .= '<h6 style="margin: 0 0 8px 0; color: #4caf50;">💾 Database Backup</h6>';
+    $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Regular backups protect your data. Schedule automatic database backups.</p>';
+    $html .= '<div style="font-size: 13px; color: #495057;">';
+    $html .= '<strong>⏱️ Time:</strong> 15 minutes | <strong>🎯 Impact:</strong> Critical Data Protection';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '<div style="margin-left: 15px;">';
+    $html .= '<a href="' . $admin_url . 'plugin-install.php?s=updraftplus&tab=search&type=term" target="_blank" style="display: inline-block; background: #4caf50; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔌 UpdraftPlus</a><br>';
+    $html .= '<a href="https://wordpress.org/support/article/wordpress-backups/" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📚 Backup Guide</a>';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '</div>';
+
+    $html .= '</div>';
+
+    if (!$has_issues) {
+        $html .= '<div class="debug-info" style="background: #d4edda; border-left: 4px solid #28a745; color: #155724;">';
+        $html .= '✅ Database looks healthy! Consider the maintenance practices above for optimal performance.';
+        $html .= '</div>';
+    }
+
     $html .= '</div>';
     return $html;
 }
@@ -618,28 +1465,112 @@ function generate_query_profiler() {
         $html .= '</div>';
     }
 
-    // Query optimization recommendations
-    $html .= '<h4>💡 Query Optimization Recommendations</h4>';
-    $html .= '<div class="debug-info" style="line-height: 1.6;">';
+    // Query optimization with actionable solutions
+    $html .= '<h4>💡 Query Optimization & Actionable Solutions</h4>';
+
+    $admin_url = admin_url();
+    $has_issues = false;
 
     if ($query_count > 50) {
-        $html .= '<div style="margin-bottom: 12px; padding: 10px; background: #fff3cd; border-left: 4px solid #ffc107; border-radius: 4px;">';
-        $html .= '<strong>⚠️ High query count (' . $query_count . ') detected</strong><br>';
-        $html .= 'Consider implementing <a href="https://developer.wordpress.org/advanced-administration/performance/optimization/" target="_blank" style="color: #007bff;">object caching</a> or ';
-        $html .= '<a href="https://wordpress.org/plugins/query-monitor/" target="_blank" style="color: #007bff;">query optimization</a>';
+        $has_issues = true;
+        $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #ff9800; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+        $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+        $html .= '<div style="flex: 1;">';
+        $html .= '<h6 style="margin: 0 0 8px 0; color: #ff9800;">📊 High Query Count (' . $query_count . ' queries)</h6>';
+        $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Too many database queries slow your site. Install Query Monitor to identify problematic plugins/themes.</p>';
+        $html .= '<div style="font-size: 13px; color: #495057;">';
+        $html .= '<strong>⏱️ Time:</strong> 15-30 minutes | <strong>🎯 Impact:</strong> High Performance';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '<div style="margin-left: 15px;">';
+        $html .= '<a href="' . $admin_url . 'plugin-install.php?s=query+monitor&tab=search&type=term" target="_blank" style="display: inline-block; background: #ff9800; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔍 Install Monitor</a><br>';
+        $html .= '<a href="https://developer.wordpress.org/advanced-administration/performance/optimization/" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📚 Optimization Guide</a>';
+        $html .= '</div>';
+        $html .= '</div>';
         $html .= '</div>';
     }
 
     if ($slow_queries > 0) {
-        $html .= '<div style="margin-bottom: 12px; padding: 10px; background: #f8d7da; border-left: 4px solid #dc3545; border-radius: 4px;">';
-        $html .= '<strong>🐌 ' . $slow_queries . ' slow queries detected</strong><br>';
-        $html .= 'Use <a href="https://wordpress.org/plugins/query-monitor/" target="_blank" style="color: #007bff;">Query Monitor</a> to identify and optimize slow queries';
+        $has_issues = true;
+        $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #dc3545; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+        $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+        $html .= '<div style="flex: 1;">';
+        $html .= '<h6 style="margin: 0 0 8px 0; color: #dc3545;">🐌 Slow Queries Detected (' . $slow_queries . ' queries >50ms)</h6>';
+        $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Slow database queries significantly impact performance. Use Query Monitor to identify and optimize them.</p>';
+        $html .= '<div style="font-size: 13px; color: #495057;">';
+        $html .= '<strong>⏱️ Time:</strong> 30-60 minutes | <strong>🎯 Impact:</strong> Critical Performance';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '<div style="margin-left: 15px;">';
+        $html .= '<a href="' . $admin_url . 'plugin-install.php?s=query+monitor&tab=search&type=term" target="_blank" style="display: inline-block; background: #dc3545; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔍 Install Monitor</a><br>';
+        $html .= '<a href="https://wordpress.org/plugins/query-monitor/" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📚 About Plugin</a>';
+        $html .= '</div>';
+        $html .= '</div>';
         $html .= '</div>';
     }
 
-    $html .= '<div style="margin-bottom: 10px;">💾 <strong>Object Caching:</strong> Install <a href="https://wordpress.org/plugins/redis-cache/" target="_blank" style="color: #007bff;">Redis Cache</a> or <a href="https://memcached.org/" target="_blank" style="color: #007bff;">Memcached</a> to reduce database load</div>';
+    if ($avg_time > 10) {
+        $has_issues = true;
+        $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #ff9800; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+        $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+        $html .= '<div style="flex: 1;">';
+        $html .= '<h6 style="margin: 0 0 8px 0; color: #ff9800;">📈 High Average Query Time (' . round($avg_time, 2) . 'ms)</h6>';
+        $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Average query time is high. Consider object caching and database optimization.</p>';
+        $html .= '<div style="font-size: 13px; color: #495057;">';
+        $html .= '<strong>⏱️ Time:</strong> 20-40 minutes | <strong>🎯 Impact:</strong> High Performance';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '<div style="margin-left: 15px;">';
+        $html .= '<a href="' . $admin_url . 'plugin-install.php?s=redis+object+cache&tab=search&type=term" target="_blank" style="display: inline-block; background: #ff9800; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">💾 Object Cache</a><br>';
+        $html .= '<a href="' . $admin_url . 'plugin-install.php?s=wp+optimize&tab=search&type=term" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔧 DB Optimize</a>';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '</div>';
+    }
 
-    $html .= '<div style="margin-bottom: 10px;">📊 <strong>Query Monitoring:</strong> Use <a href="https://wordpress.org/plugins/query-monitor/" target="_blank" style="color: #007bff;">Query Monitor</a> for detailed query analysis and debugging</div>';
+    // General query optimization recommendations
+    $html .= '<div style="background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); border-radius: 8px; padding: 20px; margin: 15px 0;">';
+    $html .= '<h5 style="color: #4caf50; margin: 0 0 15px 0; font-size: 16px;">🔍 Query Optimization Tools</h5>';
+
+    $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #4caf50; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+    $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+    $html .= '<div style="flex: 1;">';
+    $html .= '<h6 style="margin: 0 0 8px 0; color: #4caf50;">🔍 Install Query Monitor</h6>';
+    $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Essential tool for identifying slow queries, duplicate queries, and database performance issues.</p>';
+    $html .= '<div style="font-size: 13px; color: #495057;">';
+    $html .= '<strong>⏱️ Time:</strong> 5 minutes | <strong>🎯 Impact:</strong> Excellent Debugging';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '<div style="margin-left: 15px;">';
+    $html .= '<a href="' . $admin_url . 'plugin-install.php?s=query+monitor&tab=search&type=term" target="_blank" style="display: inline-block; background: #4caf50; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔌 Install</a><br>';
+    $html .= '<a href="https://wordpress.org/plugins/query-monitor/" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📚 About</a>';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '</div>';
+
+    $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #4caf50; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+    $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+    $html .= '<div style="flex: 1;">';
+    $html .= '<h6 style="margin: 0 0 8px 0; color: #4caf50;">💾 Object Caching Setup</h6>';
+    $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Object caching stores database query results in memory, dramatically reducing database load.</p>';
+    $html .= '<div style="font-size: 13px; color: #495057;">';
+    $html .= '<strong>⏱️ Time:</strong> 15-30 minutes | <strong>🎯 Impact:</strong> Very High Performance';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '<div style="margin-left: 15px;">';
+    $html .= '<a href="' . $admin_url . 'plugin-install.php?s=redis+object+cache&tab=search&type=term" target="_blank" style="display: inline-block; background: #4caf50; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔌 Redis Cache</a><br>';
+    $html .= '<a href="https://developer.wordpress.org/advanced-administration/performance/object-cache/" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📚 Object Cache Guide</a>';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '</div>';
+
+    $html .= '</div>';
+
+    if (!$has_issues) {
+        $html .= '<div class="debug-info" style="background: #d4edda; border-left: 4px solid #28a745; color: #155724;">';
+        $html .= '✅ Query performance looks good! Consider the optimization tools above for even better performance.';
+        $html .= '</div>';
+    }
 
     $html .= '<div style="margin-bottom: 10px;">🔍 <strong>Plugin Review:</strong> Audit plugins with <a href="https://wordpress.org/plugins/p3-profiler/" target="_blank" style="color: #007bff;">P3 Profiler</a> to identify those generating excessive queries</div>';
 
@@ -749,6 +1680,110 @@ function generate_theme_diagnostics() {
         $html .= '<div class="debug-warning">⚠️ Not using a child theme - customizations may be lost on theme updates</div>';
     }
 
+    // Theme optimization recommendations
+    $html .= '<h4>💡 Theme Optimization & Actionable Solutions</h4>';
+
+    $admin_url = admin_url();
+    $has_issues = false;
+
+    // Check if not using child theme
+    if (!$parent_theme) {
+        $has_issues = true;
+        $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #ff9800; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+        $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+        $html .= '<div style="flex: 1;">';
+        $html .= '<h6 style="margin: 0 0 8px 0; color: #ff9800;">⚠️ No Child Theme Detected</h6>';
+        $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Using a child theme protects customizations during theme updates. Create one now.</p>';
+        $html .= '<div style="font-size: 13px; color: #495057;">';
+        $html .= '<strong>⏱️ Time:</strong> 15-20 minutes | <strong>🎯 Impact:</strong> High Customization Safety';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '<div style="margin-left: 15px;">';
+        $html .= '<a href="' . $admin_url . 'plugin-install.php?s=child+theme+configurator&tab=search&type=term" target="_blank" style="display: inline-block; background: #ff9800; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔧 Child Theme Tool</a><br>';
+        $html .= '<a href="https://developer.wordpress.org/themes/advanced-topics/child-themes/" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📚 Child Theme Guide</a>';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '</div>';
+    }
+
+    // Check for missing theme features
+    $missing_features = [];
+    $important_features = [
+        'post-thumbnails' => 'Post Thumbnails',
+        'title-tag' => 'Title Tag Support',
+        'html5' => 'HTML5 Support',
+        'responsive-embeds' => 'Responsive Embeds'
+    ];
+
+    foreach ($important_features as $feature => $label) {
+        if (!current_theme_supports($feature)) {
+            $missing_features[] = $label;
+        }
+    }
+
+    if (!empty($missing_features)) {
+        $has_issues = true;
+        $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #ff9800; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+        $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+        $html .= '<div style="flex: 1;">';
+        $html .= '<h6 style="margin: 0 0 8px 0; color: #ff9800;">🚀 Missing Theme Features</h6>';
+        $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Your theme is missing: ' . implode(', ', $missing_features) . '. Consider updating or switching themes.</p>';
+        $html .= '<div style="font-size: 13px; color: #495057;">';
+        $html .= '<strong>⏱️ Time:</strong> 10-30 minutes | <strong>🎯 Impact:</strong> Medium Functionality';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '<div style="margin-left: 15px;">';
+        $html .= '<a href="' . $admin_url . 'themes.php" target="_blank" style="display: inline-block; background: #ff9800; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🎨 Browse Themes</a><br>';
+        $html .= '<a href="https://developer.wordpress.org/themes/functionality/featured-images-post-thumbnails/" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📚 Theme Features</a>';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '</div>';
+    }
+
+    // General theme maintenance recommendations
+    $html .= '<div style="background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); border-radius: 8px; padding: 20px; margin: 15px 0;">';
+    $html .= '<h5 style="color: #4caf50; margin: 0 0 15px 0; font-size: 16px;">🎨 Theme Maintenance Best Practices</h5>';
+
+    $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #4caf50; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+    $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+    $html .= '<div style="flex: 1;">';
+    $html .= '<h6 style="margin: 0 0 8px 0; color: #4caf50;">🔄 Keep Theme Updated</h6>';
+    $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Regular theme updates provide security fixes, new features, and compatibility improvements.</p>';
+    $html .= '<div style="font-size: 13px; color: #495057;">';
+    $html .= '<strong>⏱️ Time:</strong> 5 minutes | <strong>🎯 Impact:</strong> High Security & Compatibility';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '<div style="margin-left: 15px;">';
+    $html .= '<a href="' . $admin_url . 'update-core.php" target="_blank" style="display: inline-block; background: #4caf50; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔄 Check Updates</a><br>';
+    $html .= '<a href="https://wordpress.org/support/article/updating-wordpress/" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📚 Update Guide</a>';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '</div>';
+
+    $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #4caf50; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+    $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+    $html .= '<div style="flex: 1;">';
+    $html .= '<h6 style="margin: 0 0 8px 0; color: #4caf50;">🧪 Test Theme Changes</h6>';
+    $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Always test theme changes on a staging site before applying to production.</p>';
+    $html .= '<div style="font-size: 13px; color: #495057;">';
+    $html .= '<strong>⏱️ Time:</strong> 10 minutes | <strong>🎯 Impact:</strong> Risk Prevention';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '<div style="margin-left: 15px;">';
+    $html .= '<a href="' . $admin_url . 'plugin-install.php?s=wp+staging&tab=search&type=term" target="_blank" style="display: inline-block; background: #4caf50; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔧 Staging Plugin</a><br>';
+    $html .= '<a href="https://wordpress.org/support/article/wordpress-backups/" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📚 Backup Guide</a>';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '</div>';
+
+    $html .= '</div>';
+
+    if (!$has_issues) {
+        $html .= '<div class="debug-info" style="background: #d4edda; border-left: 4px solid #28a745; color: #155724;">';
+        $html .= '✅ Theme setup looks good! Consider the maintenance practices above for optimal theme management.';
+        $html .= '</div>';
+    }
+
     $html .= '</div>';
     return $html;
 }
@@ -789,60 +1824,195 @@ function generate_block_editor() {
     // Available blocks
     if (function_exists('get_dynamic_block_names')) {
         $dynamic_blocks = get_dynamic_block_names();
-        $html .= '<h4>🔧 Dynamic Blocks Available</h4>';
-        $html .= '<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; margin: 15px 0;">';
+        $html .= '<h4>🔧 Dynamic Blocks Available (' . count($dynamic_blocks) . ' total)</h4>';
 
-        foreach (array_slice($dynamic_blocks, 0, 20) as $block) {
-            $html .= '<div style="background: #f8f9fa; padding: 8px; border-radius: 4px; border-left: 2px solid #007bff; font-size: 12px;">';
-            $html .= '🧱 ' . esc_html($block);
+        // Scrollable, resizable grid container
+        $html .= '<div class="dynamic-blocks-container" style="
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            background: #f8f9fa;
+            margin: 15px 0;
+            resize: vertical;
+            overflow: hidden;
+            min-height: 200px;
+            max-height: 600px;
+            height: 300px;
+        ">';
+
+        $html .= '<div class="dynamic-blocks-header" style="
+            background: #e9ecef;
+            padding: 10px 15px;
+            border-bottom: 1px solid #ddd;
+            font-weight: 600;
+            color: #495057;
+            position: sticky;
+            top: 0;
+            z-index: 1;
+        ">';
+        $html .= '📋 All Dynamic Blocks - Scroll to view all • Drag bottom edge to resize';
+        $html .= '</div>';
+
+        $html .= '<div class="dynamic-blocks-grid" style="
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap: 10px;
+            padding: 15px;
+            max-height: calc(100% - 45px);
+            overflow-y: auto;
+            overflow-x: hidden;
+        ">';
+
+        // Show ALL blocks, not just first 20
+        foreach ($dynamic_blocks as $block) {
+            $html .= '<div class="block-item" style="
+                background: white;
+                padding: 12px;
+                border-radius: 6px;
+                border-left: 3px solid #007bff;
+                font-size: 13px;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+                transition: all 0.2s ease;
+                cursor: default;
+            " onmouseover="this.style.boxShadow=\'0 2px 6px rgba(0,0,0,0.15)\'; this.style.transform=\'translateY(-1px)\'" onmouseout="this.style.boxShadow=\'0 1px 3px rgba(0,0,0,0.1)\'; this.style.transform=\'translateY(0)\'">';
+            $html .= '<div style="font-weight: 600; color: #007bff; margin-bottom: 4px;">🧱 Block</div>';
+            $html .= '<div style="font-family: monospace; font-size: 12px; color: #495057; word-break: break-all;">' . esc_html($block) . '</div>';
             $html .= '</div>';
         }
 
-        if (count($dynamic_blocks) > 20) {
-            $html .= '<div style="padding: 8px; text-align: center; color: #666;">... and ' . (count($dynamic_blocks) - 20) . ' more blocks</div>';
-        }
+        $html .= '</div>';
+        $html .= '</div>';
 
+        // Add summary info
+        $html .= '<div style="margin-top: 10px; padding: 8px 12px; background: #e7f3ff; border-radius: 4px; font-size: 12px; color: #0056b3;">';
+        $html .= '📊 <strong>Total Dynamic Blocks:</strong> ' . count($dynamic_blocks) . ' blocks available';
         $html .= '</div>';
     }
 
-    // Block editor recommendations
-    $html .= '<h4>💡 Block Editor Recommendations</h4>';
-    $html .= '<div class="debug-info" style="line-height: 1.6;">';
+    // Block editor optimization with actionable solutions
+    $html .= '<h4>💡 Block Editor Optimization & Actionable Solutions</h4>';
 
+    $admin_url = admin_url();
+    $has_issues = false;
+
+    // Check if Block Editor is disabled
     if (!$gutenberg_enabled) {
-        $html .= '<div style="margin-bottom: 12px; padding: 10px; background: #fff3cd; border-left: 4px solid #ffc107; border-radius: 4px;">';
-        $html .= '<strong>⚠️ Block Editor is disabled</strong><br>';
-        $html .= 'Consider enabling the <a href="https://wordpress.org/gutenberg/" target="_blank" style="color: #007bff;">Block Editor (Gutenberg)</a> for modern content creation and better user experience';
+        $has_issues = true;
+        $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #ff9800; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+        $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+        $html .= '<div style="flex: 1;">';
+        $html .= '<h6 style="margin: 0 0 8px 0; color: #ff9800;">🧱 Block Editor Disabled</h6>';
+        $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Block Editor (Gutenberg) is disabled. Consider enabling it for modern content creation and better user experience.</p>';
+        $html .= '<div style="font-size: 13px; color: #495057;">';
+        $html .= '<strong>⏱️ Time:</strong> 5-10 minutes | <strong>🎯 Impact:</strong> High Content Creation';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '<div style="margin-left: 15px;">';
+        $html .= '<a href="' . $admin_url . 'options-writing.php" target="_blank" style="display: inline-block; background: #ff9800; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔧 Enable Editor</a><br>';
+        $html .= '<a href="https://wordpress.org/gutenberg/" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📚 About Gutenberg</a>';
+        $html .= '</div>';
+        $html .= '</div>';
         $html .= '</div>';
     }
 
+    // Check for missing theme support
     if (!$theme_support) {
-        $html .= '<div style="margin-bottom: 12px; padding: 10px; background: #d1ecf1; border-left: 4px solid #17a2b8; border-radius: 4px;">';
-        $html .= '<strong>🎨 Add editor styles support</strong><br>';
-        $html .= 'Add <code>add_theme_support(\'editor-styles\');</code> to your theme\'s functions.php. ';
-        $html .= 'Learn more: <a href="https://developer.wordpress.org/block-editor/how-to-guides/themes/theme-support/#editor-styles" target="_blank" style="color: #007bff;">Editor Styles Documentation</a>';
+        $has_issues = true;
+        $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #ff9800; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+        $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+        $html .= '<div style="flex: 1;">';
+        $html .= '<h6 style="margin: 0 0 8px 0; color: #ff9800;">🎨 Missing Editor Styles Support</h6>';
+        $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Theme lacks editor styles support. Add editor-styles support for better block editing experience.</p>';
+        $html .= '<div style="font-size: 13px; color: #495057;">';
+        $html .= '<strong>⏱️ Time:</strong> 10-15 minutes | <strong>🎯 Impact:</strong> Medium Editor Experience';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '<div style="margin-left: 15px;">';
+        $html .= '<a href="' . $admin_url . 'theme-editor.php" target="_blank" style="display: inline-block; background: #ff9800; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔧 Edit Theme</a><br>';
+        $html .= '<a href="https://developer.wordpress.org/block-editor/how-to-guides/themes/theme-support/#editor-styles" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📚 Editor Styles</a>';
+        $html .= '</div>';
+        $html .= '</div>';
         $html .= '</div>';
     }
 
+    // Check for missing wide alignment support
     if (!$wide_support) {
-        $html .= '<div style="margin-bottom: 12px; padding: 10px; background: #d4edda; border-left: 4px solid #28a745; border-radius: 4px;">';
-        $html .= '<strong>📐 Add wide alignment support</strong><br>';
-        $html .= 'Add <code>add_theme_support(\'align-wide\');</code> to enable wide and full-width block alignments. ';
-        $html .= 'Guide: <a href="https://developer.wordpress.org/block-editor/how-to-guides/themes/theme-support/#wide-alignment" target="_blank" style="color: #007bff;">Wide Alignment Support</a>';
+        $has_issues = true;
+        $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #ff9800; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+        $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+        $html .= '<div style="flex: 1;">';
+        $html .= '<h6 style="margin: 0 0 8px 0; color: #ff9800;">📐 Missing Wide Alignment Support</h6>';
+        $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Theme lacks wide alignment support. Enable wide and full-width block alignments for better layouts.</p>';
+        $html .= '<div style="font-size: 13px; color: #495057;">';
+        $html .= '<strong>⏱️ Time:</strong> 10-15 minutes | <strong>🎯 Impact:</strong> Medium Layout Flexibility';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '<div style="margin-left: 15px;">';
+        $html .= '<a href="' . $admin_url . 'theme-editor.php" target="_blank" style="display: inline-block; background: #ff9800; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔧 Edit Theme</a><br>';
+        $html .= '<a href="https://developer.wordpress.org/block-editor/how-to-guides/themes/theme-support/#wide-alignment" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📚 Wide Alignment</a>';
+        $html .= '</div>';
+        $html .= '</div>';
         $html .= '</div>';
     }
 
-    $html .= '<div style="margin-bottom: 10px;">🧱 <strong>Plugin Compatibility:</strong> Regularly update block-related plugins and test with <a href="https://wordpress.org/plugins/health-check/" target="_blank" style="color: #007bff;">Health Check plugin</a></div>';
+    // General block editor recommendations
+    $html .= '<div style="background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); border-radius: 8px; padding: 20px; margin: 15px 0;">';
+    $html .= '<h5 style="color: #4caf50; margin: 0 0 15px 0; font-size: 16px;">🧱 Block Editor Best Practices</h5>';
 
-    $html .= '<div style="margin-bottom: 10px;">🎯 <strong>Testing Strategy:</strong> Test blocks in different contexts using <a href="https://wordpress.org/plugins/block-unit-test/" target="_blank" style="color: #007bff;">Block Unit Test</a> plugin</div>';
+    $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #4caf50; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+    $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+    $html .= '<div style="flex: 1;">';
+    $html .= '<h6 style="margin: 0 0 8px 0; color: #4caf50;">🧪 Block Testing Plugin</h6>';
+    $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Install Block Unit Test plugin to test blocks in different contexts and ensure compatibility.</p>';
+    $html .= '<div style="font-size: 13px; color: #495057;">';
+    $html .= '<strong>⏱️ Time:</strong> 5 minutes | <strong>🎯 Impact:</strong> High Block Testing';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '<div style="margin-left: 15px;">';
+    $html .= '<a href="' . $admin_url . 'plugin-install.php?s=block+unit+test&tab=search&type=term" target="_blank" style="display: inline-block; background: #4caf50; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔌 Install Plugin</a><br>';
+    $html .= '<a href="https://wordpress.org/plugins/block-unit-test/" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📚 About Plugin</a>';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '</div>';
 
-    $html .= '<div style="margin-bottom: 10px;">📱 <strong>Responsive Design:</strong> Ensure blocks work across devices with <a href="https://developer.wordpress.org/block-editor/how-to-guides/block-tutorial/responsive-blocks/" target="_blank" style="color: #007bff;">responsive block development</a></div>';
+    $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #4caf50; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+    $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+    $html .= '<div style="flex: 1;">';
+    $html .= '<h6 style="margin: 0 0 8px 0; color: #4caf50;">🎨 Custom Block Development</h6>';
+    $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Create custom blocks using @wordpress/create-block tool for unique content needs.</p>';
+    $html .= '<div style="font-size: 13px; color: #495057;">';
+    $html .= '<strong>⏱️ Time:</strong> 60-120 minutes | <strong>🎯 Impact:</strong> High Customization';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '<div style="margin-left: 15px;">';
+    $html .= '<a href="https://developer.wordpress.org/block-editor/getting-started/create-block/" target="_blank" style="display: inline-block; background: #4caf50; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔧 Create Block</a><br>';
+    $html .= '<a href="https://developer.wordpress.org/block-editor/" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📚 Block Handbook</a>';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '</div>';
 
-    $html .= '<div style="margin-bottom: 10px;">🎨 <strong>Custom Blocks:</strong> Create custom blocks with <a href="https://developer.wordpress.org/block-editor/getting-started/create-block/" target="_blank" style="color: #007bff;">@wordpress/create-block</a> tool</div>';
-
-    $html .= '<div>📚 <strong>Resources:</strong> <a href="https://developer.wordpress.org/block-editor/" target="_blank" style="color: #007bff;">Block Editor Handbook</a> • <a href="https://wordpress.org/gutenberg/" target="_blank" style="color: #007bff;">Gutenberg Plugin</a> • <a href="https://fullsiteediting.com/" target="_blank" style="color: #007bff;">Full Site Editing</a></div>';
+    $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #4caf50; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+    $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+    $html .= '<div style="flex: 1;">';
+    $html .= '<h6 style="margin: 0 0 8px 0; color: #4caf50;">📱 Responsive Block Design</h6>';
+    $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Ensure blocks work across all devices with responsive design principles and testing.</p>';
+    $html .= '<div style="font-size: 13px; color: #495057;">';
+    $html .= '<strong>⏱️ Time:</strong> 30-45 minutes | <strong>🎯 Impact:</strong> High Mobile Experience';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '<div style="margin-left: 15px;">';
+    $html .= '<a href="https://developer.wordpress.org/block-editor/how-to-guides/block-tutorial/responsive-blocks/" target="_blank" style="display: inline-block; background: #4caf50; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📱 Responsive Guide</a><br>';
+    $html .= '<a href="https://fullsiteediting.com/" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🌐 Full Site Editing</a>';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '</div>';
 
     $html .= '</div>';
+
+    if (!$has_issues) {
+        $html .= '<div class="debug-info" style="background: #d4edda; border-left: 4px solid #28a745; color: #155724;">';
+        $html .= '✅ Block Editor configuration looks good! Consider the enhancement practices above for optimal block editing experience.';
+        $html .= '</div>';
+    }
     $html .= '</div>';
 
     return $html;
@@ -961,25 +2131,429 @@ function generate_content_analysis() {
         $html .= '</div>';
     }
 
-    // Content recommendations
-    $html .= '<h4>💡 Content Optimization Recommendations</h4>';
-    $html .= '<div class="debug-info">';
+    // SEO & Content Analysis
+    $html .= '<h4>🔍 SEO & Content Quality Analysis</h4>';
+    $html .= generate_seo_content_analysis();
 
+    // Actionable Content Optimization Recommendations
+    $html .= '<h4>💡 Actionable Content Optimization Tasks</h4>';
+    $html .= generate_actionable_content_recommendations($custom_post_types, $shortcode_tags);
+
+    $html .= '</div>';
+
+    return $html;
+}
+
+function generate_seo_content_analysis() {
+    $html = '<div class="debug-info" style="background: linear-gradient(135deg, #e3f2fd 0%, #f3e5f5 100%); border-left: 4px solid #2196f3;">';
+
+    // Get recent posts for analysis
+    $recent_posts = get_posts([
+        'numberposts' => 10,
+        'post_status' => 'publish',
+        'post_type' => 'post'
+    ]);
+
+    $recent_pages = get_posts([
+        'numberposts' => 5,
+        'post_status' => 'publish',
+        'post_type' => 'page'
+    ]);
+
+    $all_content = array_merge($recent_posts, $recent_pages);
+
+    // SEO Analysis Results
+    $seo_issues = [];
+    $seo_good = [];
+    $content_stats = [
+        'total_analyzed' => count($all_content),
+        'missing_meta_desc' => 0,
+        'short_titles' => 0,
+        'long_titles' => 0,
+        'missing_alt_text' => 0,
+        'short_content' => 0,
+        'no_internal_links' => 0
+    ];
+
+    foreach ($all_content as $post) {
+        // Meta description analysis
+        $meta_desc = get_post_meta($post->ID, '_yoast_wpseo_metadesc', true) ?:
+                    get_post_meta($post->ID, '_aioseop_description', true) ?:
+                    get_post_meta($post->ID, 'rank_math_description', true) ?:
+                    get_post_meta($post->ID, 'description', true);
+
+        if (empty($meta_desc)) {
+            $content_stats['missing_meta_desc']++;
+        }
+
+        // Title length analysis
+        $title_length = strlen($post->post_title);
+        if ($title_length < 30) {
+            $content_stats['short_titles']++;
+        } elseif ($title_length > 60) {
+            $content_stats['long_titles']++;
+        }
+
+        // Content length analysis
+        $content_length = str_word_count(strip_tags($post->post_content));
+        if ($content_length < 300) {
+            $content_stats['short_content']++;
+        }
+
+        // Internal links analysis
+        $internal_links = preg_match_all('/<a[^>]+href=["\']' . preg_quote(home_url(), '/') . '[^"\']*["\'][^>]*>/i', $post->post_content);
+        if ($internal_links < 2) {
+            $content_stats['no_internal_links']++;
+        }
+
+        // Image alt text analysis (simplified)
+        $images_without_alt = preg_match_all('/<img[^>]+(?!.*alt=)[^>]*>/i', $post->post_content);
+        if ($images_without_alt > 0) {
+            $content_stats['missing_alt_text']++;
+        }
+    }
+
+    // Technical SEO Checks
+    $permalink_structure = get_option('permalink_structure');
+    $site_url = get_site_url();
+    $is_ssl = is_ssl();
+    $robots_txt_exists = file_exists(ABSPATH . 'robots.txt');
+
+    // Generate SEO Analysis Grid
+    $html .= '<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 15px; margin: 15px 0;">';
+
+    // Content SEO Issues
+    $html .= '<div style="background: white; padding: 15px; border-radius: 8px; border-left: 3px solid #f44336;">';
+    $html .= '<h5 style="margin: 0 0 10px 0; color: #f44336;">🚨 SEO Issues Found</h5>';
+
+    if ($content_stats['missing_meta_desc'] > 0) {
+        $percentage = round(($content_stats['missing_meta_desc'] / $content_stats['total_analyzed']) * 100);
+        $html .= '<div style="margin: 8px 0; font-size: 13px;">📝 <strong>' . $content_stats['missing_meta_desc'] . '</strong> posts missing meta descriptions (' . $percentage . '%)</div>';
+    }
+
+    if ($content_stats['short_titles'] > 0) {
+        $html .= '<div style="margin: 8px 0; font-size: 13px;">📏 <strong>' . $content_stats['short_titles'] . '</strong> posts with titles too short (&lt;30 chars)</div>';
+    }
+
+    if ($content_stats['long_titles'] > 0) {
+        $html .= '<div style="margin: 8px 0; font-size: 13px;">📏 <strong>' . $content_stats['long_titles'] . '</strong> posts with titles too long (&gt;60 chars)</div>';
+    }
+
+    if ($content_stats['short_content'] > 0) {
+        $percentage = round(($content_stats['short_content'] / $content_stats['total_analyzed']) * 100);
+        $html .= '<div style="margin: 8px 0; font-size: 13px;">📄 <strong>' . $content_stats['short_content'] . '</strong> posts with thin content (&lt;300 words) (' . $percentage . '%)</div>';
+    }
+
+    if ($content_stats['missing_alt_text'] > 0) {
+        $html .= '<div style="margin: 8px 0; font-size: 13px;">🖼️ <strong>' . $content_stats['missing_alt_text'] . '</strong> posts with images missing alt text</div>';
+    }
+
+    if ($content_stats['no_internal_links'] > 0) {
+        $percentage = round(($content_stats['no_internal_links'] / $content_stats['total_analyzed']) * 100);
+        $html .= '<div style="margin: 8px 0; font-size: 13px;">🔗 <strong>' . $content_stats['no_internal_links'] . '</strong> posts with insufficient internal links (' . $percentage . '%)</div>';
+    }
+
+    $html .= '</div>';
+
+    // Technical SEO Status
+    $html .= '<div style="background: white; padding: 15px; border-radius: 8px; border-left: 3px solid #2196f3;">';
+    $html .= '<h5 style="margin: 0 0 10px 0; color: #2196f3;">⚙️ Technical SEO Status</h5>';
+
+    $ssl_status = $is_ssl ? '✅ SSL Enabled' : '❌ SSL Not Enabled';
+    $ssl_color = $is_ssl ? '#4caf50' : '#f44336';
+    $html .= '<div style="margin: 8px 0; font-size: 13px; color: ' . $ssl_color . ';">🔒 ' . $ssl_status . '</div>';
+
+    $permalink_status = !empty($permalink_structure) ? '✅ SEO-Friendly URLs' : '❌ Default URLs (not SEO-friendly)';
+    $permalink_color = !empty($permalink_structure) ? '#4caf50' : '#f44336';
+    $html .= '<div style="margin: 8px 0; font-size: 13px; color: ' . $permalink_color . ';">🔗 ' . $permalink_status . '</div>';
+
+    $robots_status = $robots_txt_exists ? '✅ Robots.txt Found' : '⚠️ Robots.txt Missing';
+    $robots_color = $robots_txt_exists ? '#4caf50' : '#ff9800';
+    $html .= '<div style="margin: 8px 0; font-size: 13px; color: ' . $robots_color . ';">🤖 ' . $robots_status . '</div>';
+
+    // Check for SEO plugins
+    $seo_plugins = [];
+    if (is_plugin_active('wordpress-seo/wp-seo.php')) $seo_plugins[] = 'Yoast SEO';
+    if (is_plugin_active('all-in-one-seo-pack/all_in_one_seo_pack.php')) $seo_plugins[] = 'All in One SEO';
+    if (is_plugin_active('seopress/seopress.php')) $seo_plugins[] = 'SEOPress';
+    if (is_plugin_active('seo-by-rank-math/rank-math.php')) $seo_plugins[] = 'RankMath SEO';
+
+    if (!empty($seo_plugins)) {
+        $html .= '<div style="margin: 8px 0; font-size: 13px; color: #4caf50;">🔌 SEO Plugin: ' . implode(', ', $seo_plugins) . '</div>';
+    } else {
+        $html .= '<div style="margin: 8px 0; font-size: 13px; color: #f44336;">🔌 No SEO Plugin Detected</div>';
+    }
+
+    $html .= '</div>';
+
+    // Content Quality Metrics
+    $html .= '<div style="background: white; padding: 15px; border-radius: 8px; border-left: 3px solid #4caf50;">';
+    $html .= '<h5 style="margin: 0 0 10px 0; color: #4caf50;">📊 Content Quality Metrics</h5>';
+
+    $html .= '<div style="margin: 8px 0; font-size: 13px;">📝 <strong>' . $content_stats['total_analyzed'] . '</strong> posts analyzed</div>';
+
+    $good_meta_desc = $content_stats['total_analyzed'] - $content_stats['missing_meta_desc'];
+    if ($good_meta_desc > 0) {
+        $percentage = round(($good_meta_desc / $content_stats['total_analyzed']) * 100);
+        $html .= '<div style="margin: 8px 0; font-size: 13px; color: #4caf50;">✅ <strong>' . $good_meta_desc . '</strong> posts with meta descriptions (' . $percentage . '%)</div>';
+    }
+
+    $good_content = $content_stats['total_analyzed'] - $content_stats['short_content'];
+    if ($good_content > 0) {
+        $percentage = round(($good_content / $content_stats['total_analyzed']) * 100);
+        $html .= '<div style="margin: 8px 0; font-size: 13px; color: #4caf50;">📄 <strong>' . $good_content . '</strong> posts with adequate content (' . $percentage . '%)</div>';
+    }
+
+    $html .= '</div>';
+
+    $html .= '</div>'; // Close grid
+    $html .= '</div>'; // Close main container
+
+    return $html;
+}
+
+function generate_actionable_content_recommendations($custom_post_types, $shortcode_tags) {
+    $html = '<div class="actionable-recommendations" style="background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); border-radius: 8px; padding: 20px; margin: 15px 0;">';
+
+    $admin_url = admin_url();
+    $site_url = home_url();
+
+    // High Priority Tasks
+    $html .= '<div class="priority-section" style="margin-bottom: 25px;">';
+    $html .= '<h5 style="color: #dc3545; margin: 0 0 15px 0; font-size: 16px;">🔥 High Priority Tasks (Complete First)</h5>';
+
+    // Check if SSL is enabled
+    if (!is_ssl()) {
+        $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #dc3545; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+        $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+        $html .= '<div style="flex: 1;">';
+        $html .= '<h6 style="margin: 0 0 8px 0; color: #dc3545;">🔒 Enable SSL Certificate</h6>';
+        $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">SSL is critical for SEO rankings and user trust. Google prioritizes HTTPS sites.</p>';
+        $html .= '<div style="font-size: 13px; color: #495057;">';
+        $html .= '<strong>⏱️ Time:</strong> 30-60 minutes | <strong>🎯 Impact:</strong> High SEO & Security';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '<div style="margin-left: 15px;">';
+        $html .= '<a href="https://wordpress.org/support/article/https-for-wordpress/" target="_blank" style="display: inline-block; background: #dc3545; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📚 Guide</a><br>';
+        $html .= '<a href="' . $admin_url . 'options-general.php" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">⚙️ Settings</a>';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '</div>';
+    }
+
+    // Check permalink structure
+    $permalink_structure = get_option('permalink_structure');
+    if (empty($permalink_structure)) {
+        $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #dc3545; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+        $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+        $html .= '<div style="flex: 1;">';
+        $html .= '<h6 style="margin: 0 0 8px 0; color: #dc3545;">🔗 Fix URL Structure (Permalinks)</h6>';
+        $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Default URLs (?p=123) are not SEO-friendly. Use post names or custom structure.</p>';
+        $html .= '<div style="font-size: 13px; color: #495057;">';
+        $html .= '<strong>⏱️ Time:</strong> 5 minutes | <strong>🎯 Impact:</strong> High SEO';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '<div style="margin-left: 15px;">';
+        $html .= '<a href="' . $admin_url . 'options-permalink.php" target="_blank" style="display: inline-block; background: #dc3545; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔧 Fix Now</a><br>';
+        $html .= '<a href="https://wordpress.org/support/article/using-permalinks/" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📚 Guide</a>';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '</div>';
+    }
+
+    // Check for SEO plugin
+    $has_seo_plugin = is_plugin_active('wordpress-seo/wp-seo.php') ||
+                     is_plugin_active('all-in-one-seo-pack/all_in_one_seo_pack.php') ||
+                     is_plugin_active('seopress/seopress.php') ||
+                     is_plugin_active('seo-by-rank-math/rank-math.php');
+
+    if (!$has_seo_plugin) {
+        $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #dc3545; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+        $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+        $html .= '<div style="flex: 1;">';
+        $html .= '<h6 style="margin: 0 0 8px 0; color: #dc3545;">🔌 Install SEO Plugin</h6>';
+        $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">No SEO plugin detected. Install Yoast SEO, RankMath, or SEOPress for better SEO management.</p>';
+        $html .= '<div style="font-size: 13px; color: #495057;">';
+        $html .= '<strong>⏱️ Time:</strong> 15 minutes | <strong>🎯 Impact:</strong> High SEO';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '<div style="margin-left: 15px;">';
+        $html .= '<a href="' . $admin_url . 'plugin-install.php?s=yoast+seo&tab=search&type=term" target="_blank" style="display: inline-block; background: #dc3545; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔌 Install</a><br>';
+        $html .= '<a href="https://wordpress.org/plugins/wordpress-seo/" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📚 About</a>';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '</div>';
+    }
+
+    $html .= '</div>'; // Close high priority section
+
+    // Medium Priority Tasks
+    $html .= '<div class="priority-section" style="margin-bottom: 25px;">';
+    $html .= '<h5 style="color: #ff9800; margin: 0 0 15px 0; font-size: 16px;">⚡ Medium Priority Tasks</h5>';
+
+    // Content optimization tasks
+    $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #ff9800; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+    $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+    $html .= '<div style="flex: 1;">';
+    $html .= '<h6 style="margin: 0 0 8px 0; color: #ff9800;">📝 Audit & Optimize Existing Content</h6>';
+    $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Review posts for missing meta descriptions, short content, and missing alt text.</p>';
+    $html .= '<div style="font-size: 13px; color: #495057;">';
+    $html .= '<strong>⏱️ Time:</strong> 2-4 hours | <strong>🎯 Impact:</strong> Medium SEO';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '<div style="margin-left: 15px;">';
+    $html .= '<a href="' . $admin_url . 'edit.php" target="_blank" style="display: inline-block; background: #ff9800; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📝 Edit Posts</a><br>';
+    $html .= '<a href="https://wordpress.org/support/article/writing-posts/" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📚 Guide</a>';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '</div>';
+
+    // Image optimization
+    $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #ff9800; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+    $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+    $html .= '<div style="flex: 1;">';
+    $html .= '<h6 style="margin: 0 0 8px 0; color: #ff9800;">🖼️ Optimize Images & Add Alt Text</h6>';
+    $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Compress images and ensure all images have descriptive alt text for accessibility and SEO.</p>';
+    $html .= '<div style="font-size: 13px; color: #495057;">';
+    $html .= '<strong>⏱️ Time:</strong> 1-2 hours | <strong>🎯 Impact:</strong> Medium SEO & Performance';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '<div style="margin-left: 15px;">';
+    $html .= '<a href="' . $admin_url . 'upload.php" target="_blank" style="display: inline-block; background: #ff9800; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🖼️ Media</a><br>';
+    $html .= '<a href="https://wordpress.org/support/article/inserting-media-into-posts-and-pages/" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📚 Guide</a>';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '</div>';
+
+    // Robots.txt check
+    if (!file_exists(ABSPATH . 'robots.txt')) {
+        $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #ff9800; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+        $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+        $html .= '<div style="flex: 1;">';
+        $html .= '<h6 style="margin: 0 0 8px 0; color: #ff9800;">🤖 Create Robots.txt File</h6>';
+        $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Create a robots.txt file to guide search engine crawlers.</p>';
+        $html .= '<div style="font-size: 13px; color: #495057;">';
+        $html .= '<strong>⏱️ Time:</strong> 10 minutes | <strong>🎯 Impact:</strong> Medium SEO';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '<div style="margin-left: 15px;">';
+        $html .= '<a href="' . $site_url . '/robots.txt" target="_blank" style="display: inline-block; background: #ff9800; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔍 Check</a><br>';
+        $html .= '<a href="https://wordpress.org/support/article/search-engine-optimization/#robots-txt-optimization" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📚 Guide</a>';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '</div>';
+    }
+
+    $html .= '</div>'; // Close medium priority section
+
+    // Low Priority Tasks
+    $html .= '<div class="priority-section" style="margin-bottom: 20px;">';
+    $html .= '<h5 style="color: #4caf50; margin: 0 0 15px 0; font-size: 16px;">📋 Low Priority Tasks (Ongoing Maintenance)</h5>';
+
+    // Custom post types review
     if (count($custom_post_types) > 5) {
-        $html .= '<div>⚠️ Many custom post types (' . count($custom_post_types) . ') - ensure they\'re all necessary</div>';
+        $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #4caf50; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+        $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+        $html .= '<div style="flex: 1;">';
+        $html .= '<h6 style="margin: 0 0 8px 0; color: #4caf50;">🔧 Review Custom Post Types</h6>';
+        $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">You have ' . count($custom_post_types) . ' custom post types. Review if all are necessary to avoid complexity.</p>';
+        $html .= '<div style="font-size: 13px; color: #495057;">';
+        $html .= '<strong>⏱️ Time:</strong> 30 minutes | <strong>🎯 Impact:</strong> Low Performance';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '<div style="margin-left: 15px;">';
+        $html .= '<a href="' . admin_url('edit.php?post_type=') . '" target="_blank" style="display: inline-block; background: #4caf50; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📝 Review</a>';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '</div>';
     }
 
+    // Shortcodes review
     if (count($shortcode_tags) > 50) {
-        $html .= '<div>🔗 High number of shortcodes (' . count($shortcode_tags) . ') - review for conflicts</div>';
+        $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #4caf50; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+        $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+        $html .= '<div style="flex: 1;">';
+        $html .= '<h6 style="margin: 0 0 8px 0; color: #4caf50;">🔗 Review Shortcodes</h6>';
+        $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">High number of shortcodes (' . count($shortcode_tags) . ') detected. Review for conflicts and unused codes.</p>';
+        $html .= '<div style="font-size: 13px; color: #495057;">';
+        $html .= '<strong>⏱️ Time:</strong> 45 minutes | <strong>🎯 Impact:</strong> Low Performance';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '<div style="margin-left: 15px;">';
+        $html .= '<a href="' . admin_url('plugins.php') . '" target="_blank" style="display: inline-block; background: #4caf50; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔌 Plugins</a>';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '</div>';
     }
 
-    $html .= '<div>📊 Regularly audit and clean up unused content</div>';
-    $html .= '<div>🖼️ Optimize images and media files for performance</div>';
-    $html .= '<div>🔍 Use SEO-friendly URLs and meta descriptions</div>';
-    $html .= '<div>📱 Ensure content is mobile-responsive</div>';
+    // Content audit task
+    $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #4caf50; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+    $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+    $html .= '<div style="flex: 1;">';
+    $html .= '<h6 style="margin: 0 0 8px 0; color: #4caf50;">📊 Regular Content Audit</h6>';
+    $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Schedule monthly content audits to remove outdated content and update information.</p>';
+    $html .= '<div style="font-size: 13px; color: #495057;">';
+    $html .= '<strong>⏱️ Time:</strong> 2 hours/month | <strong>🎯 Impact:</strong> Low SEO (Long-term)';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '<div style="margin-left: 15px;">';
+    $html .= '<a href="' . admin_url('edit.php') . '" target="_blank" style="display: inline-block; background: #4caf50; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📝 Posts</a><br>';
+    $html .= '<a href="https://wordpress.org/support/article/content-audit/" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📚 Guide</a>';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '</div>';
 
+    // Mobile responsiveness check
+    $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #4caf50; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+    $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+    $html .= '<div style="flex: 1;">';
+    $html .= '<h6 style="margin: 0 0 8px 0; color: #4caf50;">📱 Test Mobile Responsiveness</h6>';
+    $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Regularly test your site on mobile devices and use Google\'s Mobile-Friendly Test.</p>';
+    $html .= '<div style="font-size: 13px; color: #495057;">';
+    $html .= '<strong>⏱️ Time:</strong> 30 minutes | <strong>🎯 Impact:</strong> Medium SEO';
     $html .= '</div>';
     $html .= '</div>';
+    $html .= '<div style="margin-left: 15px;">';
+    $html .= '<a href="https://search.google.com/test/mobile-friendly?url=' . urlencode(home_url()) . '" target="_blank" style="display: inline-block; background: #4caf50; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📱 Test</a><br>';
+    $html .= '<a href="' . admin_url('customize.php') . '" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🎨 Customize</a>';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '</div>';
+
+    $html .= '</div>'; // Close low priority section
+
+    // SEO Tools & Resources
+    $html .= '<div class="seo-resources" style="background: linear-gradient(135deg, #e8f5e8 0%, #f0f8ff 100%); padding: 20px; border-radius: 8px; margin-top: 20px; border: 1px solid #d4edda;">';
+    $html .= '<h5 style="color: #155724; margin: 0 0 15px 0; font-size: 16px;">🛠️ Recommended SEO Tools & Resources</h5>';
+
+    $html .= '<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px;">';
+
+    // Free tools
+    $html .= '<div style="background: white; padding: 15px; border-radius: 6px; border-left: 3px solid #28a745;">';
+    $html .= '<h6 style="margin: 0 0 10px 0; color: #28a745;">🆓 Free SEO Tools</h6>';
+    $html .= '<div style="font-size: 13px; line-height: 1.6;">';
+    $html .= '<a href="https://search.google.com/search-console" target="_blank" style="color: #007bff; text-decoration: none;">📊 Google Search Console</a><br>';
+    $html .= '<a href="https://analytics.google.com" target="_blank" style="color: #007bff; text-decoration: none;">📈 Google Analytics</a><br>';
+    $html .= '<a href="https://pagespeed.web.dev" target="_blank" style="color: #007bff; text-decoration: none;">⚡ PageSpeed Insights</a><br>';
+    $html .= '<a href="https://search.google.com/test/mobile-friendly" target="_blank" style="color: #007bff; text-decoration: none;">📱 Mobile-Friendly Test</a>';
+    $html .= '</div>';
+    $html .= '</div>';
+
+    // WordPress resources
+    $html .= '<div style="background: white; padding: 15px; border-radius: 6px; border-left: 3px solid #007bff;">';
+    $html .= '<h6 style="margin: 0 0 10px 0; color: #007bff;">📚 WordPress SEO Guides</h6>';
+    $html .= '<div style="font-size: 13px; line-height: 1.6;">';
+    $html .= '<a href="https://wordpress.org/support/article/search-engine-optimization/" target="_blank" style="color: #007bff; text-decoration: none;">🔍 WordPress SEO Guide</a><br>';
+    $html .= '<a href="https://wordpress.org/support/article/using-permalinks/" target="_blank" style="color: #007bff; text-decoration: none;">🔗 Permalink Guide</a><br>';
+    $html .= '<a href="https://wordpress.org/support/article/writing-posts/" target="_blank" style="color: #007bff; text-decoration: none;">📝 Writing Posts Guide</a><br>';
+    $html .= '<a href="https://wordpress.org/support/article/inserting-media-into-posts-and-pages/" target="_blank" style="color: #007bff; text-decoration: none;">🖼️ Media Guide</a>';
+    $html .= '</div>';
+    $html .= '</div>';
+
+    $html .= '</div>'; // Close grid
+    $html .= '</div>'; // Close resources section
+
+    $html .= '</div>'; // Close main container
 
     return $html;
 }
@@ -1084,24 +2658,93 @@ function generate_plugin_analysis() {
         $html .= '</div>';
     }
 
-    // Plugin recommendations
-    $html .= '<h4>💡 Plugin Optimization Recommendations</h4>';
-    $html .= '<div class="debug-info">';
+    // Plugin recommendations with actionable solutions
+    $html .= '<h4>💡 Plugin Optimization & Actionable Solutions</h4>';
+
+    $admin_url = admin_url();
+    $has_issues = false;
 
     if (count($active_plugins) > 30) {
-        $html .= '<div>⚠️ High number of active plugins (' . count($active_plugins) . ') - consider deactivating unused ones</div>';
+        $has_issues = true;
+        $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #ff9800; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+        $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+        $html .= '<div style="flex: 1;">';
+        $html .= '<h6 style="margin: 0 0 8px 0; color: #ff9800;">⚠️ Too Many Active Plugins (' . count($active_plugins) . ' active)</h6>';
+        $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">High plugin count can slow your site. Review and deactivate unused plugins.</p>';
+        $html .= '<div style="font-size: 13px; color: #495057;">';
+        $html .= '<strong>⏱️ Time:</strong> 20-30 minutes | <strong>🎯 Impact:</strong> Medium Performance';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '<div style="margin-left: 15px;">';
+        $html .= '<a href="' . $admin_url . 'plugins.php" target="_blank" style="display: inline-block; background: #ff9800; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔌 Manage Plugins</a><br>';
+        $html .= '<a href="' . $admin_url . 'plugin-install.php?s=query+monitor&tab=search&type=term" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔍 Monitor Impact</a>';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '</div>';
     }
 
     if ($inactive_count > 10) {
-        $html .= '<div>🗑️ Consider removing ' . $inactive_count . ' inactive plugins to reduce security risks</div>';
+        $has_issues = true;
+        $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #dc3545; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+        $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+        $html .= '<div style="flex: 1;">';
+        $html .= '<h6 style="margin: 0 0 8px 0; color: #dc3545;">🗑️ Too Many Inactive Plugins (' . $inactive_count . ' inactive)</h6>';
+        $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Inactive plugins pose security risks. Delete plugins you don\'t need.</p>';
+        $html .= '<div style="font-size: 13px; color: #495057;">';
+        $html .= '<strong>⏱️ Time:</strong> 15 minutes | <strong>🎯 Impact:</strong> High Security';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '<div style="margin-left: 15px;">';
+        $html .= '<a href="' . $admin_url . 'plugins.php?plugin_status=inactive" target="_blank" style="display: inline-block; background: #dc3545; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🗑️ Remove Inactive</a><br>';
+        $html .= '<a href="https://wordpress.org/support/article/managing-plugins/" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📚 Plugin Guide</a>';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '</div>';
     }
 
-    $html .= '<div>🔄 Regularly update plugins to latest versions</div>';
-    $html .= '<div>🛡️ Remove unused plugins completely rather than just deactivating</div>';
-    $html .= '<div>📊 Monitor plugin performance impact on site speed</div>';
-    $html .= '<div>🔍 Review plugin permissions and data access</div>';
+    // General plugin management recommendations
+    $html .= '<div style="background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); border-radius: 8px; padding: 20px; margin: 15px 0;">';
+    $html .= '<h5 style="color: #4caf50; margin: 0 0 15px 0; font-size: 16px;">🔌 Plugin Management Best Practices</h5>';
+
+    $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #4caf50; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+    $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+    $html .= '<div style="flex: 1;">';
+    $html .= '<h6 style="margin: 0 0 8px 0; color: #4caf50;">🔄 Update All Plugins</h6>';
+    $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Keep plugins updated to latest versions for security and compatibility.</p>';
+    $html .= '<div style="font-size: 13px; color: #495057;">';
+    $html .= '<strong>⏱️ Time:</strong> 10 minutes | <strong>🎯 Impact:</strong> High Security';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '<div style="margin-left: 15px;">';
+    $html .= '<a href="' . $admin_url . 'update-core.php" target="_blank" style="display: inline-block; background: #4caf50; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔄 Update Now</a><br>';
+    $html .= '<a href="https://wordpress.org/support/article/updating-wordpress/" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📚 Update Guide</a>';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '</div>';
+
+    $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #4caf50; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+    $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+    $html .= '<div style="flex: 1;">';
+    $html .= '<h6 style="margin: 0 0 8px 0; color: #4caf50;">📊 Monitor Plugin Performance</h6>';
+    $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Use Query Monitor to identify plugins that slow down your site.</p>';
+    $html .= '<div style="font-size: 13px; color: #495057;">';
+    $html .= '<strong>⏱️ Time:</strong> 5 minutes | <strong>🎯 Impact:</strong> Performance Insights';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '<div style="margin-left: 15px;">';
+    $html .= '<a href="' . $admin_url . 'plugin-install.php?s=query+monitor&tab=search&type=term" target="_blank" style="display: inline-block; background: #4caf50; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔍 Install Monitor</a><br>';
+    $html .= '<a href="https://wordpress.org/plugins/query-monitor/" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📚 About</a>';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '</div>';
 
     $html .= '</div>';
+
+    if (!$has_issues) {
+        $html .= '<div class="debug-info" style="background: #d4edda; border-left: 4px solid #28a745; color: #155724;">';
+        $html .= '✅ Plugin setup looks good! Consider the best practices above for optimal management.';
+        $html .= '</div>';
+    }
 
     $html .= '</div>';
     return $html;
@@ -1166,21 +2809,112 @@ function generate_hooks_filters() {
 
     $html .= '</div>';
 
-    // Hook performance recommendations
-    $html .= '<h4>💡 Hook Performance Recommendations</h4>';
-    $html .= '<div class="debug-info">';
+    // Hook performance optimization with actionable solutions
+    $html .= '<h4>💡 Hook Performance & Actionable Solutions</h4>';
 
+    $admin_url = admin_url();
+    $has_issues = false;
+
+    // Check for hooks with too many callbacks
     $heavy_hooks = array_filter($hook_counts, function($count) { return $count > 15; });
     if (!empty($heavy_hooks)) {
-        $html .= '<div>⚠️ ' . count($heavy_hooks) . ' hooks have >15 callbacks - review for performance impact</div>';
+        $has_issues = true;
+        $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #ff9800; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+        $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+        $html .= '<div style="flex: 1;">';
+        $html .= '<h6 style="margin: 0 0 8px 0; color: #ff9800;">⚠️ Heavy Hook Usage (' . count($heavy_hooks) . ' hooks with >15 callbacks)</h6>';
+        $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Some hooks have many callbacks which may impact performance. Review and optimize hook usage.</p>';
+        $html .= '<div style="font-size: 13px; color: #495057;">';
+        $html .= '<strong>⏱️ Time:</strong> 30-60 minutes | <strong>🎯 Impact:</strong> Medium Performance';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '<div style="margin-left: 15px;">';
+        $html .= '<a href="' . $admin_url . 'plugin-install.php?s=query+monitor&tab=search&type=term" target="_blank" style="display: inline-block; background: #ff9800; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔍 Monitor Hooks</a><br>';
+        $html .= '<a href="https://developer.wordpress.org/plugins/hooks/" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📚 Hook Guide</a>';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '</div>';
     }
 
-    $html .= '<div>🔍 Monitor hook execution time in development</div>';
-    $html .= '<div>⚡ Remove unused hook callbacks to improve performance</div>';
-    $html .= '<div>📊 Use appropriate hook priorities to control execution order</div>';
-    $html .= '<div>🛡️ Validate hook callback functions exist before execution</div>';
+    // Check for excessive total hooks
+    if ($total_hooks > 1000) {
+        $has_issues = true;
+        $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #ff9800; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+        $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+        $html .= '<div style="flex: 1;">';
+        $html .= '<h6 style="margin: 0 0 8px 0; color: #ff9800;">🪝 High Hook Count (' . number_format($total_hooks) . ' total hooks)</h6>';
+        $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Very high number of hooks may indicate plugin conflicts or excessive customizations.</p>';
+        $html .= '<div style="font-size: 13px; color: #495057;">';
+        $html .= '<strong>⏱️ Time:</strong> 45-90 minutes | <strong>🎯 Impact:</strong> Medium Plugin Review';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '<div style="margin-left: 15px;">';
+        $html .= '<a href="' . $admin_url . 'plugins.php" target="_blank" style="display: inline-block; background: #ff9800; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔌 Review Plugins</a><br>';
+        $html .= '<a href="' . $admin_url . 'plugin-install.php?s=health+check&tab=search&type=term" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🏥 Health Check</a>';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '</div>';
+    }
+
+    // General hook optimization recommendations
+    $html .= '<div style="background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); border-radius: 8px; padding: 20px; margin: 15px 0;">';
+    $html .= '<h5 style="color: #4caf50; margin: 0 0 15px 0; font-size: 16px;">🪝 Hook Development Best Practices</h5>';
+
+    $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #4caf50; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+    $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+    $html .= '<div style="flex: 1;">';
+    $html .= '<h6 style="margin: 0 0 8px 0; color: #4caf50;">🔍 Hook Monitoring</h6>';
+    $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Monitor hook execution time and performance impact using Query Monitor plugin.</p>';
+    $html .= '<div style="font-size: 13px; color: #495057;">';
+    $html .= '<strong>⏱️ Time:</strong> 10-15 minutes | <strong>🎯 Impact:</strong> High Performance Monitoring';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '<div style="margin-left: 15px;">';
+    $html .= '<a href="' . $admin_url . 'plugin-install.php?s=query+monitor&tab=search&type=term" target="_blank" style="display: inline-block; background: #4caf50; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔍 Install Monitor</a><br>';
+    $html .= '<a href="https://developer.wordpress.org/plugins/hooks/" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📚 Hook Documentation</a>';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '</div>';
+
+    $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #4caf50; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+    $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+    $html .= '<div style="flex: 1;">';
+    $html .= '<h6 style="margin: 0 0 8px 0; color: #4caf50;">📊 Hook Priority Management</h6>';
+    $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Use appropriate hook priorities to control execution order and prevent conflicts.</p>';
+    $html .= '<div style="font-size: 13px; color: #495057;">';
+    $html .= '<strong>⏱️ Time:</strong> 15-30 minutes | <strong>🎯 Impact:</strong> High Code Organization';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '<div style="margin-left: 15px;">';
+    $html .= '<a href="https://developer.wordpress.org/plugins/hooks/actions/" target="_blank" style="display: inline-block; background: #4caf50; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">⚡ Action Hooks</a><br>';
+    $html .= '<a href="https://developer.wordpress.org/plugins/hooks/filters/" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔧 Filter Hooks</a>';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '</div>';
+
+    $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #4caf50; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+    $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+    $html .= '<div style="flex: 1;">';
+    $html .= '<h6 style="margin: 0 0 8px 0; color: #4caf50;">🛡️ Hook Validation</h6>';
+    $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Validate hook callback functions exist and implement proper error handling.</p>';
+    $html .= '<div style="font-size: 13px; color: #495057;">';
+    $html .= '<strong>⏱️ Time:</strong> 20-40 minutes | <strong>🎯 Impact:</strong> High Code Reliability';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '<div style="margin-left: 15px;">';
+    $html .= '<a href="https://developer.wordpress.org/coding-standards/wordpress-coding-standards/php/" target="_blank" style="display: inline-block; background: #4caf50; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📋 Coding Standards</a><br>';
+    $html .= '<a href="https://developer.wordpress.org/plugins/plugin-basics/best-practices/" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📚 Best Practices</a>';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '</div>';
 
     $html .= '</div>';
+
+    if (!$has_issues) {
+        $html .= '<div class="debug-info" style="background: #d4edda; border-left: 4px solid #28a745; color: #155724;">';
+        $html .= '✅ Hook usage looks reasonable! Consider the monitoring and optimization practices above for optimal performance.';
+        $html .= '</div>';
+    }
     $html .= '</div>';
 
     return $html;
@@ -1273,15 +3007,119 @@ function generate_http_curl() {
         $html .= '<div class="debug-error">❌ cURL is not available on this server</div>';
     }
 
-    // HTTP recommendations
-    $html .= '<h4>💡 HTTP & cURL Recommendations</h4>';
-    $html .= '<div class="debug-info">';
-    $html .= '<div>🔒 Always use HTTPS for external API calls when possible</div>';
-    $html .= '<div>⏱️ Set appropriate timeouts for HTTP requests</div>';
-    $html .= '<div>🛡️ Validate SSL certificates in production environments</div>';
-    $html .= '<div>📊 Monitor external API response times and reliability</div>';
-    $html .= '<div>🔄 Implement retry logic for critical external requests</div>';
+    // HTTP & cURL optimization with actionable solutions
+    $html .= '<h4>💡 HTTP & cURL Optimization & Actionable Solutions</h4>';
+
+    $admin_url = admin_url();
+    $has_issues = false;
+
+    // Check if any HTTP tests failed
+    $failed_tests = 0;
+    foreach ($test_urls as $url => $description) {
+        $response = wp_remote_get($url, ['timeout' => 5, 'sslverify' => false]);
+        if (is_wp_error($response)) {
+            $failed_tests++;
+        }
+    }
+
+    if ($failed_tests > 0) {
+        $has_issues = true;
+        $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #dc3545; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+        $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+        $html .= '<div style="flex: 1;">';
+        $html .= '<h6 style="margin: 0 0 8px 0; color: #dc3545;">🌐 HTTP Connection Issues (' . $failed_tests . ' failed tests)</h6>';
+        $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">External HTTP requests are failing. This affects plugin updates, API calls, and external integrations.</p>';
+        $html .= '<div style="font-size: 13px; color: #495057;">';
+        $html .= '<strong>⏱️ Time:</strong> 20-40 minutes | <strong>🎯 Impact:</strong> Critical Connectivity';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '<div style="margin-left: 15px;">';
+        $html .= '<a href="https://wordpress.org/support/article/common-wordpress-errors/#http-error" target="_blank" style="display: inline-block; background: #dc3545; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔧 Fix HTTP Errors</a><br>';
+        $html .= '<a href="https://developer.wordpress.org/plugins/http-api/" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📚 HTTP API Guide</a>';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '</div>';
+    }
+
+    // Check if cURL is not available
+    if (!function_exists('curl_version')) {
+        $has_issues = true;
+        $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #dc3545; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+        $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+        $html .= '<div style="flex: 1;">';
+        $html .= '<h6 style="margin: 0 0 8px 0; color: #dc3545;">❌ cURL Not Available</h6>';
+        $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">cURL is required for HTTP requests. Contact your hosting provider to enable cURL extension.</p>';
+        $html .= '<div style="font-size: 13px; color: #495057;">';
+        $html .= '<strong>⏱️ Time:</strong> 15-30 minutes | <strong>🎯 Impact:</strong> Critical Server Configuration';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '<div style="margin-left: 15px;">';
+        $html .= '<a href="https://wordpress.org/about/requirements/" target="_blank" style="display: inline-block; background: #dc3545; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📋 WP Requirements</a><br>';
+        $html .= '<a href="https://www.php.net/manual/en/curl.installation.php" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📚 cURL Setup</a>';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '</div>';
+    }
+
+    // General HTTP optimization recommendations
+    $html .= '<div style="background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); border-radius: 8px; padding: 20px; margin: 15px 0;">';
+    $html .= '<h5 style="color: #4caf50; margin: 0 0 15px 0; font-size: 16px;">🌐 HTTP & API Best Practices</h5>';
+
+    $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #4caf50; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+    $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+    $html .= '<div style="flex: 1;">';
+    $html .= '<h6 style="margin: 0 0 8px 0; color: #4caf50;">🔒 SSL Certificate Validation</h6>';
+    $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Always validate SSL certificates in production for security. Only disable for testing.</p>';
+    $html .= '<div style="font-size: 13px; color: #495057;">';
+    $html .= '<strong>⏱️ Time:</strong> 5-10 minutes | <strong>🎯 Impact:</strong> High Security';
     $html .= '</div>';
+    $html .= '</div>';
+    $html .= '<div style="margin-left: 15px;">';
+    $html .= '<a href="https://developer.wordpress.org/plugins/http-api/wp-remote-get/" target="_blank" style="display: inline-block; background: #4caf50; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔧 HTTP API Docs</a><br>';
+    $html .= '<a href="https://wordpress.org/support/article/https-for-wordpress/" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📚 HTTPS Guide</a>';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '</div>';
+
+    $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #4caf50; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+    $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+    $html .= '<div style="flex: 1;">';
+    $html .= '<h6 style="margin: 0 0 8px 0; color: #4caf50;">⏱️ Request Timeout Optimization</h6>';
+    $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Set appropriate timeouts for HTTP requests to prevent site slowdowns from external API delays.</p>';
+    $html .= '<div style="font-size: 13px; color: #495057;">';
+    $html .= '<strong>⏱️ Time:</strong> 10-15 minutes | <strong>🎯 Impact:</strong> Medium Performance';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '<div style="margin-left: 15px;">';
+    $html .= '<a href="https://developer.wordpress.org/plugins/http-api/" target="_blank" style="display: inline-block; background: #4caf50; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔧 HTTP API Guide</a><br>';
+    $html .= '<a href="https://developer.wordpress.org/plugins/http-api/wp-remote-get/" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📚 Request Options</a>';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '</div>';
+
+    $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #4caf50; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+    $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+    $html .= '<div style="flex: 1;">';
+    $html .= '<h6 style="margin: 0 0 8px 0; color: #4caf50;">📊 API Monitoring</h6>';
+    $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Monitor external API response times and implement retry logic for critical requests.</p>';
+    $html .= '<div style="font-size: 13px; color: #495057;">';
+    $html .= '<strong>⏱️ Time:</strong> 20-30 minutes | <strong>🎯 Impact:</strong> High Reliability';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '<div style="margin-left: 15px;">';
+    $html .= '<a href="' . $admin_url . 'plugin-install.php?s=query+monitor&tab=search&type=term" target="_blank" style="display: inline-block; background: #4caf50; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔍 Monitor HTTP</a><br>';
+    $html .= '<a href="https://developer.wordpress.org/plugins/http-api/" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📚 API Best Practices</a>';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '</div>';
+
+    $html .= '</div>';
+
+    if (!$has_issues) {
+        $html .= '<div class="debug-info" style="background: #d4edda; border-left: 4px solid #28a745; color: #155724;">';
+        $html .= '✅ HTTP connectivity looks good! Consider the best practices above for optimal API performance and security.';
+        $html .= '</div>';
+    }
 
     $html .= '</div>';
     return $html;
@@ -1359,29 +3197,112 @@ function generate_cache_cdn() {
         $html .= '</div>';
     }
 
-    // Cache recommendations
-    $html .= '<h4>💡 Cache & Performance Recommendations</h4>';
-    $html .= '<div class="debug-info">';
+    // Cache recommendations with actionable solutions
+    $html .= '<h4>💡 Cache & Performance Actionable Solutions</h4>';
+
+    $admin_url = admin_url();
+    $has_issues = false;
 
     if (empty($active_cache_plugins)) {
-        $html .= '<div>🚀 Install a caching plugin to improve site performance</div>';
+        $has_issues = true;
+        $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #dc3545; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+        $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+        $html .= '<div style="flex: 1;">';
+        $html .= '<h6 style="margin: 0 0 8px 0; color: #dc3545;">🚀 No Caching Plugin Detected</h6>';
+        $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Caching can improve page load times by 50-80%. Install a caching plugin immediately.</p>';
+        $html .= '<div style="font-size: 13px; color: #495057;">';
+        $html .= '<strong>⏱️ Time:</strong> 10 minutes | <strong>🎯 Impact:</strong> Very High Performance';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '<div style="margin-left: 15px;">';
+        $html .= '<a href="' . $admin_url . 'plugin-install.php?s=wp+super+cache&tab=search&type=term" target="_blank" style="display: inline-block; background: #dc3545; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔌 WP Super Cache</a><br>';
+        $html .= '<a href="' . $admin_url . 'plugin-install.php?s=w3+total+cache&tab=search&type=term" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔌 W3 Total Cache</a>';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '</div>';
     }
 
     if (!$object_cache) {
-        $html .= '<div>💾 Enable object caching (Redis/Memcached) for database optimization</div>';
+        $has_issues = true;
+        $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #ff9800; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+        $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+        $html .= '<div style="flex: 1;">';
+        $html .= '<h6 style="margin: 0 0 8px 0; color: #ff9800;">💾 Object Cache Not Active</h6>';
+        $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Object caching reduces database queries. Contact your host about Redis/Memcached.</p>';
+        $html .= '<div style="font-size: 13px; color: #495057;">';
+        $html .= '<strong>⏱️ Time:</strong> 15-30 minutes | <strong>🎯 Impact:</strong> High Database Performance';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '<div style="margin-left: 15px;">';
+        $html .= '<a href="https://developer.wordpress.org/advanced-administration/performance/object-cache/" target="_blank" style="display: inline-block; background: #ff9800; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📚 Object Cache Guide</a><br>';
+        $html .= '<a href="' . $admin_url . 'plugin-install.php?s=redis+object+cache&tab=search&type=term" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔌 Redis Plugin</a>';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '</div>';
     }
 
     if (!$cdn_detected) {
-        $html .= '<div>🌐 Consider using a CDN (Cloudflare, MaxCDN) for global performance</div>';
+        $has_issues = true;
+        $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #ff9800; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+        $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+        $html .= '<div style="flex: 1;">';
+        $html .= '<h6 style="margin: 0 0 8px 0; color: #ff9800;">🌐 No CDN Detected</h6>';
+        $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">CDN improves global loading speeds. Cloudflare offers a free plan.</p>';
+        $html .= '<div style="font-size: 13px; color: #495057;">';
+        $html .= '<strong>⏱️ Time:</strong> 20-30 minutes | <strong>🎯 Impact:</strong> High Global Performance';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '<div style="margin-left: 15px;">';
+        $html .= '<a href="https://www.cloudflare.com/" target="_blank" style="display: inline-block; background: #ff9800; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🌐 Cloudflare Free</a><br>';
+        $html .= '<a href="https://developer.wordpress.org/advanced-administration/performance/optimization/#content-delivery-networks-cdn" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📚 CDN Guide</a>';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '</div>';
     }
 
-    $html .= '<div>🗜️ Enable Gzip compression on your server</div>';
-    $html .= '<div>🖼️ Optimize and compress images before uploading</div>';
-    $html .= '<div>📱 Use responsive images for different screen sizes</div>';
-    $html .= '<div>⚡ Minify CSS and JavaScript files</div>';
-    $html .= '<div>🔄 Set appropriate cache expiration headers</div>';
+    // General performance improvements
+    $html .= '<div style="background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); border-radius: 8px; padding: 20px; margin: 15px 0;">';
+    $html .= '<h5 style="color: #4caf50; margin: 0 0 15px 0; font-size: 16px;">⚡ Additional Performance Optimizations</h5>';
+
+    $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #4caf50; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+    $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+    $html .= '<div style="flex: 1;">';
+    $html .= '<h6 style="margin: 0 0 8px 0; color: #4caf50;">🖼️ Image Optimization</h6>';
+    $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Large images slow down your site. Install an image optimization plugin.</p>';
+    $html .= '<div style="font-size: 13px; color: #495057;">';
+    $html .= '<strong>⏱️ Time:</strong> 5 minutes | <strong>🎯 Impact:</strong> High Performance';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '<div style="margin-left: 15px;">';
+    $html .= '<a href="' . $admin_url . 'plugin-install.php?s=smush&tab=search&type=term" target="_blank" style="display: inline-block; background: #4caf50; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔌 Install Smush</a><br>';
+    $html .= '<a href="' . $admin_url . 'plugin-install.php?s=shortpixel&tab=search&type=term" target="_blank" style="display: inline-block; background: #4caf50; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔌 ShortPixel</a>';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '</div>';
+
+    $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #4caf50; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+    $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+    $html .= '<div style="flex: 1;">';
+    $html .= '<h6 style="margin: 0 0 8px 0; color: #4caf50;">⚡ Minification & Compression</h6>';
+    $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Minify CSS/JS and enable Gzip compression to reduce file sizes.</p>';
+    $html .= '<div style="font-size: 13px; color: #495057;">';
+    $html .= '<strong>⏱️ Time:</strong> 10 minutes | <strong>🎯 Impact:</strong> Medium Performance';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '<div style="margin-left: 15px;">';
+    $html .= '<a href="' . $admin_url . 'plugin-install.php?s=autoptimize&tab=search&type=term" target="_blank" style="display: inline-block; background: #4caf50; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔌 Autoptimize</a><br>';
+    $html .= '<a href="https://developer.wordpress.org/advanced-administration/performance/optimization/" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📚 Optimization Guide</a>';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '</div>';
 
     $html .= '</div>';
+
+    if (!$has_issues) {
+        $html .= '<div class="debug-info" style="background: #d4edda; border-left: 4px solid #28a745; color: #155724;">';
+        $html .= '✅ Cache and CDN setup looks good! Consider the additional optimizations above for even better performance.';
+        $html .= '</div>';
+    }
     $html .= '</div>';
 
     return $html;
@@ -1468,29 +3389,96 @@ function generate_error_analysis() {
         $html .= '</div>';
     }
 
-    // Error analysis recommendations
-    $html .= '<h4>💡 Error Monitoring Recommendations</h4>';
-    $html .= '<div class="debug-info">';
+    // Error analysis with actionable solutions
+    $html .= '<h4>💡 Error Monitoring & Actionable Solutions</h4>';
 
-    if (!WP_DEBUG) {
-        $html .= '<div>🐛 Enable WP_DEBUG in development to catch errors early</div>';
+    $admin_url = admin_url();
+    $has_issues = false;
+
+    if (!WP_DEBUG && !is_ssl()) { // Only recommend enabling debug in development
+        $has_issues = true;
+        $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #007bff; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+        $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+        $html .= '<div style="flex: 1;">';
+        $html .= '<h6 style="margin: 0 0 8px 0; color: #007bff;">🐛 Enable Debug Mode (Development Only)</h6>';
+        $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Enable WP_DEBUG in development to catch errors early. Never enable on production sites.</p>';
+        $html .= '<div style="font-size: 13px; color: #495057;">';
+        $html .= '<strong>⏱️ Time:</strong> 5 minutes | <strong>🎯 Impact:</strong> Better Error Detection';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '<div style="margin-left: 15px;">';
+        $html .= '<a href="https://developer.wordpress.org/advanced-administration/debug/debug-wordpress/" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔧 Debug Guide</a><br>';
+        $html .= '<a href="https://wordpress.org/support/article/debugging-in-wordpress/" target="_blank" style="display: inline-block; background: #6c757d; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📚 How-To</a>';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '</div>';
     }
 
     if ($total_errors > 100) {
-        $html .= '<div>⚠️ High error count detected - review and fix recurring issues</div>';
+        $has_issues = true;
+        $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #dc3545; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+        $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+        $html .= '<div style="flex: 1;">';
+        $html .= '<h6 style="margin: 0 0 8px 0; color: #dc3545;">⚠️ High Error Count (' . number_format($total_errors) . ' entries)</h6>';
+        $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Many errors detected. Install Query Monitor to identify and fix recurring issues.</p>';
+        $html .= '<div style="font-size: 13px; color: #495057;">';
+        $html .= '<strong>⏱️ Time:</strong> 30-60 minutes | <strong>🎯 Impact:</strong> Critical Stability';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '<div style="margin-left: 15px;">';
+        $html .= '<a href="' . $admin_url . 'plugin-install.php?s=query+monitor&tab=search&type=term" target="_blank" style="display: inline-block; background: #dc3545; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔍 Install Monitor</a><br>';
+        $html .= '<a href="https://wordpress.org/support/article/debugging-in-wordpress/" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📚 Debug Guide</a>';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '</div>';
     }
 
-    if (empty($found_logs)) {
-        $html .= '<div>📝 Enable error logging to track issues: WP_DEBUG_LOG = true</div>';
+    if (empty($found_logs) && !defined('WP_DEBUG_LOG')) {
+        $has_issues = true;
+        $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #ff9800; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+        $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+        $html .= '<div style="flex: 1;">';
+        $html .= '<h6 style="margin: 0 0 8px 0; color: #ff9800;">📝 Enable Error Logging</h6>';
+        $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Error logging is disabled. Enable WP_DEBUG_LOG to track issues and errors.</p>';
+        $html .= '<div style="font-size: 13px; color: #495057;">';
+        $html .= '<strong>⏱️ Time:</strong> 5 minutes | <strong>🎯 Impact:</strong> Better Error Tracking';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '<div style="margin-left: 15px;">';
+        $html .= '<a href="https://developer.wordpress.org/advanced-administration/debug/debug-wordpress/#wp_debug_log" target="_blank" style="display: inline-block; background: #ff9800; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔧 Enable Logging</a><br>';
+        $html .= '<a href="https://wordpress.org/support/article/debugging-in-wordpress/" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📚 Guide</a>';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '</div>';
     }
 
-    $html .= '<div>🔍 Regularly monitor error logs for new issues</div>';
-    $html .= '<div>🧹 Clean up old log files to save disk space</div>';
-    $html .= '<div>📊 Use error monitoring services for production sites</div>';
-    $html .= '<div>🛡️ Fix security-related errors immediately</div>';
-    $html .= '<div>⚡ Address performance-related warnings</div>';
+    // General error monitoring improvements
+    $html .= '<div style="background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); border-radius: 8px; padding: 20px; margin: 15px 0;">';
+    $html .= '<h5 style="color: #4caf50; margin: 0 0 15px 0; font-size: 16px;">🔍 Error Monitoring Tools</h5>';
+
+    $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #4caf50; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+    $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+    $html .= '<div style="flex: 1;">';
+    $html .= '<h6 style="margin: 0 0 8px 0; color: #4caf50;">🔍 Install Query Monitor</h6>';
+    $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Query Monitor helps identify slow queries, PHP errors, and performance issues in real-time.</p>';
+    $html .= '<div style="font-size: 13px; color: #495057;">';
+    $html .= '<strong>⏱️ Time:</strong> 5 minutes | <strong>🎯 Impact:</strong> Excellent Debugging';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '<div style="margin-left: 15px;">';
+    $html .= '<a href="' . $admin_url . 'plugin-install.php?s=query+monitor&tab=search&type=term" target="_blank" style="display: inline-block; background: #4caf50; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔌 Install</a><br>';
+    $html .= '<a href="https://wordpress.org/plugins/query-monitor/" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📚 About</a>';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '</div>';
 
     $html .= '</div>';
+
+    if (!$has_issues) {
+        $html .= '<div class="debug-info" style="background: #d4edda; border-left: 4px solid #28a745; color: #155724;">';
+        $html .= '✅ Error monitoring setup looks good! Consider the tools above for enhanced debugging.';
+        $html .= '</div>';
+    }
     $html .= '</div>';
 
     return $html;
@@ -1590,14 +3578,111 @@ function generate_log_monitoring() {
         $html .= '<div class="debug-warning">⚠️ No readable log files found. Enable WP_DEBUG_LOG to start logging.</div>';
     }
 
-    $html .= '<h4>💡 Log Monitoring Recommendations</h4>';
-    $html .= '<div class="debug-info">';
-    $html .= '<div>📊 Set up automated log monitoring for production sites</div>';
-    $html .= '<div>🔔 Configure alerts for critical errors</div>';
-    $html .= '<div>🧹 Implement log rotation to prevent large files</div>';
-    $html .= '<div>📈 Track error trends over time</div>';
-    $html .= '<div>🛡️ Monitor for security-related log entries</div>';
+    // Log monitoring optimization with actionable solutions
+    $html .= '<h4>💡 Log Monitoring & Actionable Solutions</h4>';
+
+    $admin_url = admin_url();
+    $has_issues = false;
+
+    // Check if no log files found
+    if (!$active_log) {
+        $has_issues = true;
+        $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #ff9800; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+        $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+        $html .= '<div style="flex: 1;">';
+        $html .= '<h6 style="margin: 0 0 8px 0; color: #ff9800;">📄 No Log Files Found</h6>';
+        $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Error logging is not enabled. Enable WP_DEBUG_LOG to track issues and errors.</p>';
+        $html .= '<div style="font-size: 13px; color: #495057;">';
+        $html .= '<strong>⏱️ Time:</strong> 5 minutes | <strong>🎯 Impact:</strong> High Error Tracking';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '<div style="margin-left: 15px;">';
+        $html .= '<a href="https://developer.wordpress.org/advanced-administration/debug/debug-wordpress/#wp_debug_log" target="_blank" style="display: inline-block; background: #ff9800; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔧 Enable Logging</a><br>';
+        $html .= '<a href="https://wordpress.org/support/article/debugging-in-wordpress/" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📚 Debug Guide</a>';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '</div>';
+    }
+
+    // Check for large log files
+    if ($active_log && isset($file_size) && $file_size > 10*1024*1024) { // 10MB
+        $has_issues = true;
+        $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #ff9800; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+        $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+        $html .= '<div style="flex: 1;">';
+        $html .= '<h6 style="margin: 0 0 8px 0; color: #ff9800;">💾 Large Log File (' . round($file_size / 1024 / 1024, 1) . ' MB)</h6>';
+        $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Log file is very large and may impact performance. Consider log rotation or cleanup.</p>';
+        $html .= '<div style="font-size: 13px; color: #495057;">';
+        $html .= '<strong>⏱️ Time:</strong> 10-15 minutes | <strong>🎯 Impact:</strong> Medium Performance';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '<div style="margin-left: 15px;">';
+        $html .= '<a href="' . $admin_url . 'plugin-install.php?s=wp+log+viewer&tab=search&type=term" target="_blank" style="display: inline-block; background: #ff9800; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔧 Log Manager</a><br>';
+        $html .= '<a href="https://developer.wordpress.org/advanced-administration/debug/debug-wordpress/" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📚 Log Management</a>';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '</div>';
+    }
+
+    // General log monitoring recommendations
+    $html .= '<div style="background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); border-radius: 8px; padding: 20px; margin: 15px 0;">';
+    $html .= '<h5 style="color: #4caf50; margin: 0 0 15px 0; font-size: 16px;">📊 Log Monitoring Best Practices</h5>';
+
+    $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #4caf50; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+    $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+    $html .= '<div style="flex: 1;">';
+    $html .= '<h6 style="margin: 0 0 8px 0; color: #4caf50;">📋 Install Log Viewer</h6>';
+    $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Install a log viewer plugin to easily monitor and manage WordPress error logs.</p>';
+    $html .= '<div style="font-size: 13px; color: #495057;">';
+    $html .= '<strong>⏱️ Time:</strong> 5 minutes | <strong>🎯 Impact:</strong> Excellent Log Management';
     $html .= '</div>';
+    $html .= '</div>';
+    $html .= '<div style="margin-left: 15px;">';
+    $html .= '<a href="' . $admin_url . 'plugin-install.php?s=wp+log+viewer&tab=search&type=term" target="_blank" style="display: inline-block; background: #4caf50; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔌 Install Viewer</a><br>';
+    $html .= '<a href="https://wordpress.org/plugins/wp-log-viewer/" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📚 About Plugin</a>';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '</div>';
+
+    $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #4caf50; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+    $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+    $html .= '<div style="flex: 1;">';
+    $html .= '<h6 style="margin: 0 0 8px 0; color: #4caf50;">🔔 Error Monitoring Service</h6>';
+    $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">For production sites, use professional error monitoring services like Sentry or Rollbar.</p>';
+    $html .= '<div style="font-size: 13px; color: #495057;">';
+    $html .= '<strong>⏱️ Time:</strong> 20-30 minutes | <strong>🎯 Impact:</strong> Professional Monitoring';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '<div style="margin-left: 15px;">';
+    $html .= '<a href="https://sentry.io/for/wordpress/" target="_blank" style="display: inline-block; background: #4caf50; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔗 Sentry</a><br>';
+    $html .= '<a href="https://rollbar.com/" target="_blank" style="display: inline-block; background: #4caf50; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔗 Rollbar</a>';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '</div>';
+
+    $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #4caf50; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+    $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+    $html .= '<div style="flex: 1;">';
+    $html .= '<h6 style="margin: 0 0 8px 0; color: #4caf50;">🧹 Log Rotation Setup</h6>';
+    $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Implement log rotation to prevent log files from growing too large and impacting performance.</p>';
+    $html .= '<div style="font-size: 13px; color: #495057;">';
+    $html .= '<strong>⏱️ Time:</strong> 15-25 minutes | <strong>🎯 Impact:</strong> High Maintenance';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '<div style="margin-left: 15px;">';
+    $html .= '<a href="' . $admin_url . 'plugin-install.php?s=wp+log+viewer&tab=search&type=term" target="_blank" style="display: inline-block; background: #4caf50; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔧 Log Tools</a><br>';
+    $html .= '<a href="https://developer.wordpress.org/advanced-administration/debug/debug-wordpress/" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📚 Debug Guide</a>';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '</div>';
+
+    $html .= '</div>';
+
+    if (!$has_issues) {
+        $html .= '<div class="debug-info" style="background: #d4edda; border-left: 4px solid #28a745; color: #155724;">';
+        $html .= '✅ Log monitoring setup looks good! Consider the professional monitoring tools above for enhanced error tracking.';
+        $html .= '</div>';
+    }
 
     $html .= '</div>';
     return $html;
@@ -1669,15 +3754,91 @@ function generate_wp_cli() {
         $html .= '<div class="debug-warning">⚠️ WP-CLI is not available. Install WP-CLI for powerful command-line WordPress management.</div>';
     }
 
-    $html .= '<h4>💡 WP-CLI Benefits</h4>';
-    $html .= '<div class="debug-info">';
-    $html .= '<div>⚡ Faster bulk operations than web interface</div>';
-    $html .= '<div>🔄 Automated maintenance tasks</div>';
-    $html .= '<div>📊 Detailed system information and diagnostics</div>';
-    $html .= '<div>🛠️ Advanced database operations</div>';
-    $html .= '<div>🔧 Plugin and theme management</div>';
-    $html .= '<div>📦 Easy WordPress core updates</div>';
+    // WP-CLI optimization with actionable solutions
+    $html .= '<h4>💡 WP-CLI Setup & Actionable Solutions</h4>';
+
+    $admin_url = admin_url();
+    $has_issues = false;
+
+    // Check if WP-CLI is not available
+    if (!$wp_cli_available) {
+        $has_issues = true;
+        $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #ff9800; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+        $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+        $html .= '<div style="flex: 1;">';
+        $html .= '<h6 style="margin: 0 0 8px 0; color: #ff9800;">⚡ WP-CLI Not Available</h6>';
+        $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">WP-CLI provides powerful command-line tools for WordPress management, automation, and maintenance.</p>';
+        $html .= '<div style="font-size: 13px; color: #495057;">';
+        $html .= '<strong>⏱️ Time:</strong> 10-20 minutes | <strong>🎯 Impact:</strong> High Development Efficiency';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '<div style="margin-left: 15px;">';
+        $html .= '<a href="https://wp-cli.org/#installing" target="_blank" style="display: inline-block; background: #ff9800; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔧 Install WP-CLI</a><br>';
+        $html .= '<a href="https://developer.wordpress.org/cli/commands/" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📚 Command Reference</a>';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '</div>';
+    }
+
+    // General WP-CLI benefits and recommendations
+    $html .= '<div style="background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); border-radius: 8px; padding: 20px; margin: 15px 0;">';
+    $html .= '<h5 style="color: #4caf50; margin: 0 0 15px 0; font-size: 16px;">⚡ WP-CLI Benefits & Use Cases</h5>';
+
+    $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #4caf50; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+    $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+    $html .= '<div style="flex: 1;">';
+    $html .= '<h6 style="margin: 0 0 8px 0; color: #4caf50;">🔄 Automated Maintenance</h6>';
+    $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Automate WordPress updates, database optimization, and cache clearing with WP-CLI scripts.</p>';
+    $html .= '<div style="font-size: 13px; color: #495057;">';
+    $html .= '<strong>⏱️ Time:</strong> 30-60 minutes setup | <strong>🎯 Impact:</strong> Excellent Automation';
     $html .= '</div>';
+    $html .= '</div>';
+    $html .= '<div style="margin-left: 15px;">';
+    $html .= '<a href="https://developer.wordpress.org/cli/commands/" target="_blank" style="display: inline-block; background: #4caf50; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📋 Commands</a><br>';
+    $html .= '<a href="https://wp-cli.org/handbook/guides/quick-start/" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📚 Quick Start</a>';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '</div>';
+
+    $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #4caf50; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+    $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+    $html .= '<div style="flex: 1;">';
+    $html .= '<h6 style="margin: 0 0 8px 0; color: #4caf50;">🛠️ Database Operations</h6>';
+    $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Perform database checks, optimization, search-replace operations, and exports efficiently.</p>';
+    $html .= '<div style="font-size: 13px; color: #495057;">';
+    $html .= '<strong>⏱️ Time:</strong> 5-15 minutes per task | <strong>🎯 Impact:</strong> High Database Management';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '<div style="margin-left: 15px;">';
+    $html .= '<a href="https://developer.wordpress.org/cli/commands/db/" target="_blank" style="display: inline-block; background: #4caf50; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🗄️ DB Commands</a><br>';
+    $html .= '<a href="https://developer.wordpress.org/cli/commands/search-replace/" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔍 Search Replace</a>';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '</div>';
+
+    $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #4caf50; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+    $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+    $html .= '<div style="flex: 1;">';
+    $html .= '<h6 style="margin: 0 0 8px 0; color: #4caf50;">📦 Bulk Operations</h6>';
+    $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Update all plugins/themes, manage users in bulk, and perform mass content operations faster than web interface.</p>';
+    $html .= '<div style="font-size: 13px; color: #495057;">';
+    $html .= '<strong>⏱️ Time:</strong> 2-10 minutes vs hours | <strong>🎯 Impact:</strong> Massive Time Savings';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '<div style="margin-left: 15px;">';
+    $html .= '<a href="https://developer.wordpress.org/cli/commands/plugin/" target="_blank" style="display: inline-block; background: #4caf50; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔌 Plugin Commands</a><br>';
+    $html .= '<a href="https://developer.wordpress.org/cli/commands/user/" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">👥 User Commands</a>';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '</div>';
+
+    $html .= '</div>';
+
+    if (!$has_issues) {
+        $html .= '<div class="debug-info" style="background: #d4edda; border-left: 4px solid #28a745; color: #155724;">';
+        $html .= '✅ WP-CLI is available! Use the command reference above to leverage powerful WordPress automation and management capabilities.';
+        $html .= '</div>';
+    }
 
     $html .= '</div>';
     return $html;
@@ -1739,31 +3900,182 @@ function generate_performance_summary() {
     $html .= '<div>Overall Performance Rating</div>';
     $html .= '</div>';
 
-    // Optimization recommendations
-    $html .= '<h4>🚀 Performance Optimization Recommendations</h4>';
-    $html .= '<div class="debug-info">';
+    // Performance optimization with actionable solutions
+    $html .= '<h4>🚀 Performance Optimization & Actionable Solutions</h4>';
 
-    if ($execution_time > 1) {
-        $html .= '<div>⚡ Optimize slow-loading sections and database queries</div>';
+    $admin_url = admin_url();
+    $has_issues = false;
+
+    // Check for slow execution time
+    if ($execution_time > 3) {
+        $has_issues = true;
+        $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #dc3545; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+        $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+        $html .= '<div style="flex: 1;">';
+        $html .= '<h6 style="margin: 0 0 8px 0; color: #dc3545;">⚡ Very Slow Page Load (' . round($execution_time * 1000, 2) . 'ms)</h6>';
+        $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Page load time is critically slow. Immediate optimization needed for user experience.</p>';
+        $html .= '<div style="font-size: 13px; color: #495057;">';
+        $html .= '<strong>⏱️ Time:</strong> 30-60 minutes | <strong>🎯 Impact:</strong> Critical Performance';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '<div style="margin-left: 15px;">';
+        $html .= '<a href="' . $admin_url . 'plugin-install.php?s=query+monitor&tab=search&type=term" target="_blank" style="display: inline-block; background: #dc3545; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔍 Debug Queries</a><br>';
+        $html .= '<a href="https://developer.wordpress.org/advanced-administration/performance/optimization/" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📚 Performance Guide</a>';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '</div>';
+    } elseif ($execution_time > 1) {
+        $has_issues = true;
+        $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #ff9800; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+        $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+        $html .= '<div style="flex: 1;">';
+        $html .= '<h6 style="margin: 0 0 8px 0; color: #ff9800;">⚠️ Slow Page Load (' . round($execution_time * 1000, 2) . 'ms)</h6>';
+        $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Page load time could be improved. Consider caching and optimization.</p>';
+        $html .= '<div style="font-size: 13px; color: #495057;">';
+        $html .= '<strong>⏱️ Time:</strong> 20-40 minutes | <strong>🎯 Impact:</strong> High Performance';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '<div style="margin-left: 15px;">';
+        $html .= '<a href="' . $admin_url . 'plugin-install.php?s=wp+super+cache&tab=search&type=term" target="_blank" style="display: inline-block; background: #ff9800; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🚀 Add Caching</a><br>';
+        $html .= '<a href="https://developer.wordpress.org/advanced-administration/performance/optimization/" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📚 Optimize Guide</a>';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '</div>';
     }
 
-    if ($memory_used > 50*1024*1024) {
-        $html .= '<div>💾 Reduce memory usage by optimizing plugins and themes</div>';
+    // Check for high memory usage
+    if ($memory_used > 100*1024*1024) {
+        $has_issues = true;
+        $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #dc3545; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+        $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+        $html .= '<div style="flex: 1;">';
+        $html .= '<h6 style="margin: 0 0 8px 0; color: #dc3545;">💾 High Memory Usage (' . round($memory_used / 1024 / 1024, 2) . 'MB)</h6>';
+        $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Memory usage is very high. Review plugins and themes for optimization opportunities.</p>';
+        $html .= '<div style="font-size: 13px; color: #495057;">';
+        $html .= '<strong>⏱️ Time:</strong> 30-45 minutes | <strong>🎯 Impact:</strong> Critical Memory Optimization';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '<div style="margin-left: 15px;">';
+        $html .= '<a href="' . $admin_url . 'plugins.php" target="_blank" style="display: inline-block; background: #dc3545; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔌 Review Plugins</a><br>';
+        $html .= '<a href="https://wordpress.org/support/article/editing-wp-config-php/#increasing-memory-allocated-to-php" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📚 Memory Guide</a>';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '</div>';
+    } elseif ($memory_used > 50*1024*1024) {
+        $has_issues = true;
+        $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #ff9800; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+        $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+        $html .= '<div style="flex: 1;">';
+        $html .= '<h6 style="margin: 0 0 8px 0; color: #ff9800;">💾 Moderate Memory Usage (' . round($memory_used / 1024 / 1024, 2) . 'MB)</h6>';
+        $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Memory usage could be optimized. Consider plugin cleanup and object caching.</p>';
+        $html .= '<div style="font-size: 13px; color: #495057;">';
+        $html .= '<strong>⏱️ Time:</strong> 15-30 minutes | <strong>🎯 Impact:</strong> Medium Memory Optimization';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '<div style="margin-left: 15px;">';
+        $html .= '<a href="' . $admin_url . 'plugin-install.php?s=redis+object+cache&tab=search&type=term" target="_blank" style="display: inline-block; background: #ff9800; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">💾 Object Cache</a><br>';
+        $html .= '<a href="' . $admin_url . 'plugins.php" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔌 Manage Plugins</a>';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '</div>';
     }
 
-    if ($query_count > 25) {
-        $html .= '<div>🗄️ Implement database query optimization and caching</div>';
+    // Check for high query count
+    if ($query_count > 50) {
+        $has_issues = true;
+        $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #dc3545; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+        $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+        $html .= '<div style="flex: 1;">';
+        $html .= '<h6 style="margin: 0 0 8px 0; color: #dc3545;">🗄️ High Database Query Count (' . $query_count . ' queries)</h6>';
+        $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Too many database queries are slowing down the page. Implement query optimization and caching.</p>';
+        $html .= '<div style="font-size: 13px; color: #495057;">';
+        $html .= '<strong>⏱️ Time:</strong> 30-60 minutes | <strong>🎯 Impact:</strong> Critical Database Optimization';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '<div style="margin-left: 15px;">';
+        $html .= '<a href="' . $admin_url . 'plugin-install.php?s=query+monitor&tab=search&type=term" target="_blank" style="display: inline-block; background: #dc3545; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔍 Query Monitor</a><br>';
+        $html .= '<a href="' . $admin_url . 'plugin-install.php?s=wp+optimize&tab=search&type=term" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🗄️ DB Optimize</a>';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '</div>';
+    } elseif ($query_count > 25) {
+        $has_issues = true;
+        $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #ff9800; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+        $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+        $html .= '<div style="flex: 1;">';
+        $html .= '<h6 style="margin: 0 0 8px 0; color: #ff9800;">🗄️ Moderate Query Count (' . $query_count . ' queries)</h6>';
+        $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Database queries could be optimized. Consider caching and query optimization.</p>';
+        $html .= '<div style="font-size: 13px; color: #495057;">';
+        $html .= '<strong>⏱️ Time:</strong> 20-40 minutes | <strong>🎯 Impact:</strong> Medium Database Optimization';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '<div style="margin-left: 15px;">';
+        $html .= '<a href="' . $admin_url . 'plugin-install.php?s=w3+total+cache&tab=search&type=term" target="_blank" style="display: inline-block; background: #ff9800; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🚀 Add Caching</a><br>';
+        $html .= '<a href="' . $admin_url . 'plugin-install.php?s=query+monitor&tab=search&type=term" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔍 Monitor Queries</a>';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '</div>';
     }
 
-    $html .= '<div>🚀 Enable caching plugins (WP Rocket, W3 Total Cache)</div>';
-    $html .= '<div>🌐 Use a Content Delivery Network (CDN)</div>';
-    $html .= '<div>🖼️ Optimize and compress images</div>';
-    $html .= '<div>📱 Implement responsive design best practices</div>';
-    $html .= '<div>🗜️ Enable Gzip compression</div>';
-    $html .= '<div>⚡ Minify CSS and JavaScript files</div>';
-    $html .= '<div>💾 Use object caching (Redis/Memcached)</div>';
+    // General performance optimization recommendations
+    $html .= '<div style="background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); border-radius: 8px; padding: 20px; margin: 15px 0;">';
+    $html .= '<h5 style="color: #4caf50; margin: 0 0 15px 0; font-size: 16px;">🚀 Performance Optimization Best Practices</h5>';
+
+    $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #4caf50; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+    $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+    $html .= '<div style="flex: 1;">';
+    $html .= '<h6 style="margin: 0 0 8px 0; color: #4caf50;">🚀 Install Caching Plugin</h6>';
+    $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Caching dramatically improves page load times by serving static versions of your pages.</p>';
+    $html .= '<div style="font-size: 13px; color: #495057;">';
+    $html .= '<strong>⏱️ Time:</strong> 10-15 minutes | <strong>🎯 Impact:</strong> Excellent Performance Boost';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '<div style="margin-left: 15px;">';
+    $html .= '<a href="' . $admin_url . 'plugin-install.php?s=wp+super+cache&tab=search&type=term" target="_blank" style="display: inline-block; background: #4caf50; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🚀 WP Super Cache</a><br>';
+    $html .= '<a href="' . $admin_url . 'plugin-install.php?s=w3+total+cache&tab=search&type=term" target="_blank" style="display: inline-block; background: #4caf50; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🚀 W3 Total Cache</a>';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '</div>';
+
+    $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #4caf50; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+    $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+    $html .= '<div style="flex: 1;">';
+    $html .= '<h6 style="margin: 0 0 8px 0; color: #4caf50;">🖼️ Image Optimization</h6>';
+    $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Compress and optimize images to reduce page load times and bandwidth usage.</p>';
+    $html .= '<div style="font-size: 13px; color: #495057;">';
+    $html .= '<strong>⏱️ Time:</strong> 15-25 minutes | <strong>🎯 Impact:</strong> High Performance & SEO';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '<div style="margin-left: 15px;">';
+    $html .= '<a href="' . $admin_url . 'plugin-install.php?s=smush&tab=search&type=term" target="_blank" style="display: inline-block; background: #4caf50; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🖼️ Smush</a><br>';
+    $html .= '<a href="' . $admin_url . 'plugin-install.php?s=shortpixel&tab=search&type=term" target="_blank" style="display: inline-block; background: #4caf50; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🖼️ ShortPixel</a>';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '</div>';
+
+    $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #4caf50; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+    $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+    $html .= '<div style="flex: 1;">';
+    $html .= '<h6 style="margin: 0 0 8px 0; color: #4caf50;">⚡ Minification & Compression</h6>';
+    $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Minify CSS/JS files and enable Gzip compression to reduce file sizes and improve load times.</p>';
+    $html .= '<div style="font-size: 13px; color: #495057;">';
+    $html .= '<strong>⏱️ Time:</strong> 10-20 minutes | <strong>🎯 Impact:</strong> Medium Performance';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '<div style="margin-left: 15px;">';
+    $html .= '<a href="' . $admin_url . 'plugin-install.php?s=autoptimize&tab=search&type=term" target="_blank" style="display: inline-block; background: #4caf50; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">⚡ Autoptimize</a><br>';
+    $html .= '<a href="https://developer.wordpress.org/advanced-administration/performance/optimization/" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📚 Performance Guide</a>';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '</div>';
 
     $html .= '</div>';
+
+    if (!$has_issues) {
+        $html .= '<div class="debug-info" style="background: #d4edda; border-left: 4px solid #28a745; color: #155724;">';
+        $html .= '✅ Performance metrics look good! Consider the optimization practices above for even better performance.';
+        $html .= '</div>';
+    }
     $html .= '</div>';
 
     return $html;
@@ -1845,24 +4157,112 @@ function generate_cron_diagnostics() {
         $html .= '</div>';
     }
 
-    // Cron recommendations
-    $html .= '<h4>💡 Cron Optimization Recommendations</h4>';
-    $html .= '<div class="debug-info">';
+    // Cron optimization with actionable solutions
+    $html .= '<h4>💡 Cron Optimization & Actionable Solutions</h4>';
+
+    $admin_url = admin_url();
+    $has_issues = false;
 
     if ($overdue_jobs > 0) {
-        $html .= '<div>⚠️ ' . $overdue_jobs . ' overdue jobs detected - check cron execution</div>';
+        $has_issues = true;
+        $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #dc3545; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+        $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+        $html .= '<div style="flex: 1;">';
+        $html .= '<h6 style="margin: 0 0 8px 0; color: #dc3545;">⚠️ Overdue Cron Jobs (' . $overdue_jobs . ' jobs)</h6>';
+        $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Cron jobs are not executing properly. This can affect scheduled posts, backups, and updates.</p>';
+        $html .= '<div style="font-size: 13px; color: #495057;">';
+        $html .= '<strong>⏱️ Time:</strong> 15-30 minutes | <strong>🎯 Impact:</strong> Critical Functionality';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '<div style="margin-left: 15px;">';
+        $html .= '<a href="' . $admin_url . 'plugin-install.php?s=wp+crontrol&tab=search&type=term" target="_blank" style="display: inline-block; background: #dc3545; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔧 WP Crontrol</a><br>';
+        $html .= '<a href="https://developer.wordpress.org/plugins/cron/" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📚 Cron Guide</a>';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '</div>';
     }
 
     if ($cron_disabled) {
-        $html .= '<div>🔧 WP Cron is disabled - ensure server cron is configured</div>';
+        $has_issues = true;
+        $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #ff9800; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+        $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+        $html .= '<div style="flex: 1;">';
+        $html .= '<h6 style="margin: 0 0 8px 0; color: #ff9800;">🔧 WP Cron Disabled</h6>';
+        $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">WordPress cron is disabled. Ensure server-level cron is properly configured.</p>';
+        $html .= '<div style="font-size: 13px; color: #495057;">';
+        $html .= '<strong>⏱️ Time:</strong> 20-40 minutes | <strong>🎯 Impact:</strong> High Server Configuration';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '<div style="margin-left: 15px;">';
+        $html .= '<a href="https://developer.wordpress.org/plugins/cron/hooking-wp-cron-into-the-system-task-scheduler/" target="_blank" style="display: inline-block; background: #ff9800; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔧 Server Cron Setup</a><br>';
+        $html .= '<a href="' . $admin_url . 'plugin-install.php?s=wp+crontrol&tab=search&type=term" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔍 Cron Manager</a>';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '</div>';
     }
 
-    $html .= '<div>⏰ Monitor cron job execution regularly</div>';
-    $html .= '<div>🚀 Consider server-level cron for high-traffic sites</div>';
-    $html .= '<div>📊 Remove unnecessary scheduled tasks</div>';
-    $html .= '<div>🔍 Debug failed cron jobs using WP-CLI</div>';
+    if ($total_jobs > 50) {
+        $has_issues = true;
+        $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #ff9800; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+        $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+        $html .= '<div style="flex: 1;">';
+        $html .= '<h6 style="margin: 0 0 8px 0; color: #ff9800;">📊 Many Cron Jobs (' . $total_jobs . ' total)</h6>';
+        $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">High number of cron jobs may impact performance. Review and remove unnecessary tasks.</p>';
+        $html .= '<div style="font-size: 13px; color: #495057;">';
+        $html .= '<strong>⏱️ Time:</strong> 15-25 minutes | <strong>🎯 Impact:</strong> Medium Performance';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '<div style="margin-left: 15px;">';
+        $html .= '<a href="' . $admin_url . 'plugin-install.php?s=wp+crontrol&tab=search&type=term" target="_blank" style="display: inline-block; background: #ff9800; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔧 Manage Cron</a><br>';
+        $html .= '<a href="https://developer.wordpress.org/plugins/cron/" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📚 Cron Docs</a>';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '</div>';
+    }
+
+    // General cron management recommendations
+    $html .= '<div style="background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); border-radius: 8px; padding: 20px; margin: 15px 0;">';
+    $html .= '<h5 style="color: #4caf50; margin: 0 0 15px 0; font-size: 16px;">⏰ Cron Management Best Practices</h5>';
+
+    $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #4caf50; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+    $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+    $html .= '<div style="flex: 1;">';
+    $html .= '<h6 style="margin: 0 0 8px 0; color: #4caf50;">🔍 Install WP Crontrol</h6>';
+    $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Essential plugin for viewing, editing, and debugging WordPress cron jobs.</p>';
+    $html .= '<div style="font-size: 13px; color: #495057;">';
+    $html .= '<strong>⏱️ Time:</strong> 5 minutes | <strong>🎯 Impact:</strong> Excellent Cron Management';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '<div style="margin-left: 15px;">';
+    $html .= '<a href="' . $admin_url . 'plugin-install.php?s=wp+crontrol&tab=search&type=term" target="_blank" style="display: inline-block; background: #4caf50; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔌 Install</a><br>';
+    $html .= '<a href="https://wordpress.org/plugins/wp-crontrol/" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📚 About</a>';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '</div>';
+
+    $html .= '<div class="task-item" style="background: white; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #4caf50; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+    $html .= '<div style="display: flex; justify-content: between; align-items: flex-start;">';
+    $html .= '<div style="flex: 1;">';
+    $html .= '<h6 style="margin: 0 0 8px 0; color: #4caf50;">🚀 Server-Level Cron (Advanced)</h6>';
+    $html .= '<p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">For high-traffic sites, disable WP Cron and use server cron for better performance.</p>';
+    $html .= '<div style="font-size: 13px; color: #495057;">';
+    $html .= '<strong>⏱️ Time:</strong> 30-45 minutes | <strong>🎯 Impact:</strong> High Performance (Advanced)</strong>';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '<div style="margin-left: 15px;">';
+    $html .= '<a href="https://developer.wordpress.org/plugins/cron/hooking-wp-cron-into-the-system-task-scheduler/" target="_blank" style="display: inline-block; background: #4caf50; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">🔧 Setup Guide</a><br>';
+    $html .= '<a href="https://wordpress.org/support/article/editing-wp-config-php/" target="_blank" style="display: inline-block; background: #007bff; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; margin: 2px;">📚 Config Guide</a>';
+    $html .= '</div>';
+    $html .= '</div>';
+    $html .= '</div>';
 
     $html .= '</div>';
+
+    if (!$has_issues) {
+        $html .= '<div class="debug-info" style="background: #d4edda; border-left: 4px solid #28a745; color: #155724;">';
+        $html .= '✅ Cron system looks healthy! Consider the management tools above for optimal cron monitoring.';
+        $html .= '</div>';
+    }
     $html .= '</div>';
 
     return $html;
@@ -2342,6 +4742,82 @@ function generate_cron_diagnostics() {
             padding: 10px;
             border-radius: 4px;
             border: 1px solid #dee2e6;
+        }
+
+        /* Dynamic Blocks Grid Styles */
+        .dynamic-blocks-container {
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            background: #f8f9fa;
+            margin: 15px 0;
+            resize: vertical;
+            overflow: hidden;
+            min-height: 200px;
+            max-height: 600px;
+            height: 300px;
+            transition: all 0.3s ease;
+        }
+
+        .dynamic-blocks-container:hover {
+            border-color: #007bff;
+            box-shadow: 0 2px 8px rgba(0, 123, 255, 0.1);
+        }
+
+        .dynamic-blocks-header {
+            background: #e9ecef;
+            padding: 10px 15px;
+            border-bottom: 1px solid #ddd;
+            font-weight: 600;
+            color: #495057;
+            position: sticky;
+            top: 0;
+            z-index: 1;
+            cursor: default;
+        }
+
+        .dynamic-blocks-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap: 10px;
+            padding: 15px;
+            max-height: calc(100% - 45px);
+            overflow-y: auto;
+            overflow-x: hidden;
+        }
+
+        .dynamic-blocks-grid::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .dynamic-blocks-grid::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 4px;
+        }
+
+        .dynamic-blocks-grid::-webkit-scrollbar-thumb {
+            background: #c1c1c1;
+            border-radius: 4px;
+        }
+
+        .dynamic-blocks-grid::-webkit-scrollbar-thumb:hover {
+            background: #a8a8a8;
+        }
+
+        .block-item {
+            background: white;
+            padding: 12px;
+            border-radius: 6px;
+            border-left: 3px solid #007bff;
+            font-size: 13px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            transition: all 0.2s ease;
+            cursor: default;
+        }
+
+        .block-item:hover {
+            box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+            transform: translateY(-1px);
+            border-left-color: #0056b3;
         }
 
         /* Keyboard Shortcut Animations */
@@ -2989,6 +5465,7 @@ function generate_cron_diagnostics() {
             initializeTabs();
             loadActiveTab();
             initializeKeyboardShortcuts();
+            initializeSecurityMonitoring();
 
             // Start background loading of all tabs after a short delay
             setTimeout(() => {
@@ -3554,6 +6031,44 @@ function generate_cron_diagnostics() {
         th, td { padding: 12px; text-align: left; border-bottom: 1px solid #e9ecef; }
         th { background: #f8f9fa; font-weight: 600; }
         .meta { color: #6c757d; font-size: 0.9em; margin-top: 30px; text-align: center; }
+
+        /* Dynamic Blocks Grid Styles for HTML Export */
+        .dynamic-blocks-container {
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            background: #f8f9fa;
+            margin: 15px 0;
+            max-height: 500px;
+            overflow: hidden;
+        }
+        .dynamic-blocks-header {
+            background: #e9ecef;
+            padding: 10px 15px;
+            border-bottom: 1px solid #ddd;
+            font-weight: 600;
+            color: #495057;
+        }
+        .dynamic-blocks-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap: 10px;
+            padding: 15px;
+            max-height: 450px;
+            overflow-y: auto;
+            overflow-x: hidden;
+        }
+        .block-item {
+            background: white;
+            padding: 12px;
+            border-radius: 6px;
+            border-left: 3px solid #007bff;
+            font-size: 13px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .block-item:hover {
+            box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+            transform: translateY(-1px);
+        }
     </style>
 </head>
 <body>
@@ -3797,6 +6312,89 @@ Email: sales@mytech.today`;
                 }
             }, duration);
         }
+
+        // Security Monitoring System
+        function initializeSecurityMonitoring() {
+            console.log('🛡️ Security monitoring initialized');
+
+            // Check authentication status every 30 seconds
+            setInterval(verifyAuthenticationStatus, 30000);
+
+            // Check on window focus (user returns to tab)
+            window.addEventListener('focus', verifyAuthenticationStatus);
+
+            // Check before any AJAX request
+            document.addEventListener('beforeunload', function() {
+                // Clear any sensitive data from memory
+                if (window.loadedSections) {
+                    window.loadedSections.clear();
+                }
+            });
+        }
+
+        // Verify authentication status via AJAX
+        async function verifyAuthenticationStatus() {
+            try {
+                const formData = new FormData();
+                formData.append('action', 'verify_debug_auth');
+                formData.append('nonce', DEBUG_NONCE);
+
+                const response = await fetch(window.location.href, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    throw new Error('Authentication check failed');
+                }
+
+                const result = await response.json();
+
+                if (!result.success) {
+                    handleAuthenticationFailure(result.data || 'Authentication verification failed');
+                }
+            } catch (error) {
+                console.warn('⚠️ Authentication check failed:', error);
+                // Don't immediately redirect on network errors, but log the issue
+                if (error.message.includes('Authentication check failed')) {
+                    handleAuthenticationFailure('Session verification failed');
+                }
+            }
+        }
+
+        // Handle authentication failure
+        function handleAuthenticationFailure(reason) {
+            console.error('🛡️ Authentication failure detected:', reason);
+
+            // Show security warning
+            showNotification('🛡️ Security Alert: Session expired or invalid. Redirecting to WordPress login...', 'error', 5000);
+
+            // Clear sensitive data
+            if (window.loadedSections) {
+                window.loadedSections.clear();
+            }
+
+            // Redirect to WordPress login after a delay
+            setTimeout(() => {
+                // Try to redirect to WordPress admin login
+                const adminUrl = window.location.origin + '/wp-admin/';
+                window.location.href = adminUrl;
+            }, 3000);
+        }
+
+        // Enhanced AJAX security wrapper
+        const originalFetch = window.fetch;
+        window.fetch = function(...args) {
+            // Add security headers to all requests
+            if (args[1] && args[1].method === 'POST') {
+                const headers = args[1].headers || {};
+                headers['X-Requested-With'] = 'XMLHttpRequest';
+                headers['X-Debug-Tool-Request'] = 'true';
+                args[1].headers = headers;
+            }
+
+            return originalFetch.apply(this, args);
+        };
     </script>
 </body>
 </html>
