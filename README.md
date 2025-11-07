@@ -193,7 +193,7 @@ Contact us for:
 - **Primary Developer**: myTech.Today Development Team
 - **Version**: 3.0.0-autoload
 - **Last Updated**: November 2024
-- **GitHub**: [WP_meme_player Repository](https://github.com/mytech-today-now/WP_meme_player)
+- **GitHub**: [WP_meme_player Repository](https://github.com/mytech-today-now/debug-script)
 
 ### License
 This tool is provided for educational and diagnostic purposes. Use responsibly and in accordance with your WordPress hosting provider's terms of service.
